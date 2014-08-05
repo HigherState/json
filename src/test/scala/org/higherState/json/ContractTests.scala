@@ -4,19 +4,22 @@ import org.scalatest.{Matchers, FunSuite}
 import org.scalatest.concurrent.ScalaFutures
 
 class ContractTests extends FunSuite with Matchers with ScalaFutures {
-  import Validators._
+
+
 
   object Document extends Document(None)
   case class Document(parent:Parent = None) extends JObjectContract {
+    import Validators._
 
-    val age = property[JLong]("age") being Immutable and Required
+    val age = property[JLong]("age") being Required and >(0)
     val metadata = property(Metadata(), "metadata")
   }
 
   object Metadata extends Metadata(None)
   case class Metadata(parent:Parent = None) extends JObjectContract {
+    import Validators._
 
-    val name = property[JText]("name")
+    val name = property[JText]("name") being Immutable
   }
 
   test("Contract extractor test") {

@@ -7,47 +7,46 @@ sealed trait DataState
 case object New extends DataState
 case object Delta extends DataState
 
-trait Validator[V] {
+trait Validator {
 
-  def validator:PartialFunction[(DataState, Option[V]), List[ValidationFailure]]
+  def validator:PartialFunction[(DataState, Option[Any]), List[ValidationFailure]]
 }
 
-trait Validate[V] extends Validator[V] {
+trait Validate extends Validator {
 
-  def validate(state:DataState, jType:Option[V]):List[ValidationFailure]
+  def validate(state:DataState, data:Option[Any]):List[ValidationFailure]
 }
 
 case class UnexpectedTypeFailure() extends ValidationFailure
 case class ImmutableFailure() extends ValidationFailure
 case class RequiredFailure() extends ValidationFailure
+case class PlaceHolderFailure() extends ValidationFailure
 
 
-trait Contract[+T] {
+trait Contract[T] {
 
   def unapply(data:Any):Option[T]
 }
 
-trait ObjectContract[+T, U] extends Contract[T] with Validate[U] {
+trait ObjectContract[T, U] extends Contract[T] with Validate {
 
   def parent:Parent
   def get(key:String, data:Any):Option[U]
-  def validate(state:DataState, jType:Option[U]):List[ValidationFailure] =
+  def validate(state:DataState, jType:Option[Any]):List[ValidationFailure] =
     validator.lift(state -> jType).getOrElse(Nil)
 
-  protected var children:List[(String, Validate[U])] = Nil
+  protected var children:List[(String, Validate)] = Nil
 
   protected def property[V <: U:ClassTag](key:String) =
     append(key, PropertyValueContract[T, U, V](key, this, Nil))
 
-  protected def property[W <: Contract[U]{def copy(parent:Parent):W}](contract:W, key:String):W =
+  protected def property[W <: Contract[U] with Validate{def copy(parent:Parent):W}](contract:W, key:String):W =
     append(key, contract.copy(Some(key -> this)))
 
-  private def append[W <: Validate[U]](key:String, contract:W):W = {
+  private def append[W <: Validate](key:String, contract:W):W = {
     children = key -> contract :: children
     contract
   }
-
-  def validator:PartialFunction[(DataState, Option[U]), List[ValidationFailure]]
 }
 
 
@@ -69,7 +68,7 @@ trait JObjectContract extends ObjectContract[JObject, JType] {
   def get(key:String, data:Any) =
     unapply(data).flatMap(_.value.get(key))
 
-  def validator:PartialFunction[(DataState, Option[JType]), List[ValidationFailure]] = {
+  def validator:PartialFunction[(DataState, Option[Any]), List[ValidationFailure]] = {
     case p@(ds, Some(value:JObject)) =>
       children.flatMap(p => p._2.validate(ds, value.get(p._1)))
     case (_, Some(jType)) if !jType.isInstanceOf[JObject] =>
@@ -77,19 +76,19 @@ trait JObjectContract extends ObjectContract[JObject, JType] {
   }
 }
 
-case class PropertyValueContract[T, U, V <: U : ClassTag](key:String, parent:ObjectContract[T, U], validators:List[Validator[U]]) extends Contract[V] with Validate[U] {
+case class PropertyValueContract[T, U, V <: U : ClassTag](key:String, parent:ObjectContract[T, U], validators:List[Validator]) extends Contract[V] with Validate {
 
   private val rc = classTag[V].runtimeClass
 
-  def validate(state:DataState, jType:Option[U]):List[ValidationFailure] =
-    validator.lift.apply(state -> jType).getOrElse(Nil) ++ validators.flatMap(_.validator.lift(state -> jType).getOrElse(Nil))
+  def validate(state:DataState, data:Option[Any]):List[ValidationFailure] =
+    validator.lift.apply(state -> data).getOrElse(Nil) ++ validators.flatMap(_.validator.lift(state -> data).getOrElse(Nil))
 
 
-  def being[W >: V](validator:Validator[W]) =
+  def being(validator:Validator) =
     copy(validators = validators :+ validator)
-  def and[W >: V](validator:Validator[W]) =
+  def and(validator:Validator) =
     being(validator)
-  def having[W >: V](validator:Validator[W]) =
+  def having(validator:Validator) =
     being(validator)
 
   def unapply(data: Any): Option[V] =
@@ -98,7 +97,7 @@ case class PropertyValueContract[T, U, V <: U : ClassTag](key:String, parent:Obj
         value.asInstanceOf[V] //TODO, use type tag
     }
 
-  def validator:PartialFunction[(DataState, Option[U]), List[ValidationFailure]] = {
+  def validator:PartialFunction[(DataState, Option[Any]), List[ValidationFailure]] = {
     case (_, Some(value)) if !rc.isAssignableFrom(value.getClass) =>
       List(UnexpectedTypeFailure())
   }
@@ -107,8 +106,8 @@ case class PropertyValueContract[T, U, V <: U : ClassTag](key:String, parent:Obj
 
 object Validators {
 
-  val Immutable = new Validator[Any] {
-    def validator: PartialFunction[(DataState, Option[JType]), List[ValidationFailure]] = {
+  val Immutable = new Validator {
+    def validator: PartialFunction[(DataState, Option[Any]), List[ValidationFailure]] = {
       case v@(Delta, Some(_)) =>
         List(ImmutableFailure())
       case v =>
@@ -116,12 +115,27 @@ object Validators {
     }
   }
 
-  val Required = new Validator[Any] {
-    def validator:PartialFunction[(DataState, Option[JType]), List[ValidationFailure]] = {
+  val Required = new Validator {
+    def validator:PartialFunction[(DataState, Option[Any]), List[ValidationFailure]] = {
       case v@(New, None) =>
         List(RequiredFailure())
       case v =>
         Nil
+    }
+  }
+
+  def >(value:Double) = new Validator {
+    def validator: PartialFunction[(DataState, Option[Any]), List[ValidationFailure]] = {
+      case (_, Some(i:Int)) if i <= value =>
+        List(PlaceHolderFailure())
+      case (_, Some(l:Long)) if l <= value =>
+        List(PlaceHolderFailure())
+      case (_, Some(d:Double)) if d <= value =>
+        List(PlaceHolderFailure())
+      case (_, Some(f:Float)) if f <= value =>
+        List(PlaceHolderFailure())
+      case (_, Some(_)) =>
+        List(PlaceHolderFailure())
     }
   }
 }
