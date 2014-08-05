@@ -23,12 +23,12 @@ case class RequiredFailure() extends ValidationFailure
 case class PlaceHolderFailure() extends ValidationFailure
 
 
-trait Contract[T] {
+trait Contract[+T] {
 
   def unapply(data:Any):Option[T]
 }
 
-trait ObjectContract[T, U] extends Contract[T] with Validate {
+trait ObjectContract[+T, U] extends Contract[T] with Validate {
 
   def parent:Parent
   def get(key:String, data:Any):Option[U]
@@ -76,7 +76,7 @@ trait JObjectContract extends ObjectContract[JObject, JType] {
   }
 }
 
-case class PropertyValueContract[T, U, V <: U : ClassTag](key:String, parent:ObjectContract[T, U], validators:List[Validator]) extends Contract[V] with Validate {
+case class PropertyValueContract[+T, U, V <: U : ClassTag](key:String, parent:ObjectContract[T, U], var validators:List[Validator]) extends Contract[V] with Validate {
 
   private val rc = classTag[V].runtimeClass
 
@@ -84,8 +84,10 @@ case class PropertyValueContract[T, U, V <: U : ClassTag](key:String, parent:Obj
     validator.lift.apply(state -> data).getOrElse(Nil) ++ validators.flatMap(_.validator.lift(state -> data).getOrElse(Nil))
 
 
-  def being(validator:Validator) =
-    copy(validators = validators :+ validator)
+  def being(validator:Validator) = {
+    validators = validators :+ validator //TODO make immutable
+    this
+  }
   def and(validator:Validator) =
     being(validator)
   def having(validator:Validator) =
@@ -94,7 +96,7 @@ case class PropertyValueContract[T, U, V <: U : ClassTag](key:String, parent:Obj
   def unapply(data: Any): Option[V] =
     parent.get(key, data).map {
       case value if rc.isAssignableFrom(value.getClass) =>
-        value.asInstanceOf[V] //TODO, use type tag
+        value.asInstanceOf[V]
     }
 
   def validator:PartialFunction[(DataState, Option[Any]), List[ValidationFailure]] = {
@@ -133,8 +135,6 @@ object Validators {
       case (_, Some(d:Double)) if d <= value =>
         List(PlaceHolderFailure())
       case (_, Some(f:Float)) if f <= value =>
-        List(PlaceHolderFailure())
-      case (_, Some(_)) =>
         List(PlaceHolderFailure())
     }
   }
