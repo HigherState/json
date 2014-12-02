@@ -12,5 +12,5 @@ trait JType extends Any {
 
 object JType {
   def unapply(value:JType) =
-    Some(value)
+    Some(value.value)
 }

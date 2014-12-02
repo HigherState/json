@@ -1,141 +1,62 @@
 package org.higherState.json
 
-import org.higherState.validation.ValidationFailure
 import scala.reflect._
+import reflect.runtime.universe._
+import scala.reflect.runtime.{universe=>ru}
+import org.higherState.validation.ValidationFailure
 
-sealed trait DataState
-case object New extends DataState
-case object Delta extends DataState
+abstract class Contract extends PropertyMapper {
+  implicit protected def path:Path = Path.empty
 
-trait Validator {
-
-  def validator:PartialFunction[(DataState, Option[Any]), List[ValidationFailure]]
+  def validate(value:JType, currentState:Option[JType] = None):Seq[ValidationFailure] =
+    contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key))
 }
 
-trait Validate extends Validator {
-
-  def validate(state:DataState, data:Option[Any]):List[ValidationFailure]
+trait SubContract extends PropertyMapper {
+  implicit protected def path:Path
 }
 
-case class UnexpectedTypeFailure() extends ValidationFailure
-case class ImmutableFailure() extends ValidationFailure
-case class RequiredFailure() extends ValidationFailure
-case class PlaceHolderFailure() extends ValidationFailure
-
-
-trait Contract[+T] {
-
-  def unapply(data:Any):Option[T]
-}
-
-trait ObjectContract[+T, U] extends Contract[T] with Validate {
-
-  def parent:Parent
-  def get(key:String, data:Any):Option[U]
-  def validate(state:DataState, jType:Option[Any]):List[ValidationFailure] =
-    validator.lift(state -> jType).getOrElse(Nil)
-
-  protected var children:List[(String, Validate)] = Nil
-
-  protected def property[V <: U:ClassTag](key:String) =
-    append(key, PropertyValueContract[T, U, V](key, this, Nil))
-
-  protected def property[W <: Contract[U] with Validate{def copy(parent:Parent):W}](contract:W, key:String):W =
-    append(key, contract.copy(Some(key -> this)))
-
-  private def append[W <: Validate](key:String, contract:W):W = {
-    children = key -> contract :: children
-    contract
+sealed trait PropertyMapper {
+  lazy val contractProperties:Seq[Property[_]] = {
+    val mirror = ru.runtimeMirror(this.getClass.getClassLoader)
+    val r = mirror.reflect(this)
+    val t = ru.appliedType(r.symbol.asType)
+    val propertyErasure = typeOf[Property[_]].erasure
+    t.members.collect{ case m:MethodSymbol if m.isPublic && m.typeSignature.resultType.erasure == propertyErasure =>
+      r.reflectMethod(m)().asInstanceOf[Property[_]]// reflectField doesnt work oddly
+    }.toSeq
   }
 }
 
+class Property[T](val key:String, validator:Validator = EmptyValidator)(implicit parentPath:Path, tag:ClassTag[T]) extends PropertyMapper {
+  implicit protected val path:Path = parentPath \ key
 
-trait JObjectContract extends ObjectContract[JObject, JType] {
-  //implicit def me = this
+  private lazy val _class:Class[_] = {
+    val c = classTag[T].runtimeClass
+    if (c == classTag[Nothing].runtimeClass) classTag[JType].runtimeClass
+    else c
+  }
 
-  def unapply(data:Any):Option[JObject] =
-    parent.fold {
-      data match {
-        case v: JObject => Some(v)
-        case _ => None
+  def unapply(t:JType) = path(t).collect {
+    case j if _class.isAssignableFrom(j.getClass) => j.asInstanceOf[T]
+    case JType(value) if value != null && _class.isAssignableFrom(value.getClass) => value.asInstanceOf[T]
+  }
+
+  val ? = Maybe(unapply)
+
+  def validate(value: Option[JType], currentState: Option[JType]): Seq[ValidationFailure] = {
+    val typeMatch =
+      value.collect {
+        case j if !(j == JNull || _class.isAssignableFrom(j.getClass) || _class.isAssignableFrom(j.value.getClass)) =>
+          UnexpectedTypeFailure(path, _class)
       }
-    } { p =>
-      p._2.get(p._1, data).collect {
-        case j:JObject => j
-      }
-    }
-
-  def get(key:String, data:Any) =
-    unapply(data).flatMap(_.value.get(key))
-
-  def validator:PartialFunction[(DataState, Option[Any]), List[ValidationFailure]] = {
-    case p@(ds, Some(value:JObject)) =>
-      children.flatMap(p => p._2.validate(ds, value.get(p._1)))
-    case (_, Some(jType)) if !jType.isInstanceOf[JObject] =>
-      List(UnexpectedTypeFailure())
+    val valid =  validator.validate(value, currentState, path)
+    val properties = contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key))
+    valid ++ typeMatch ++ properties
   }
 }
 
-case class PropertyValueContract[+T, U, V <: U : ClassTag](key:String, parent:ObjectContract[T, U], var validators:List[Validator]) extends Contract[V] with Validate {
-
-  private val rc = classTag[V].runtimeClass
-
-  def validate(state:DataState, data:Option[Any]):List[ValidationFailure] =
-    validator.lift.apply(state -> data).getOrElse(Nil) ++ validators.flatMap(_.validator.lift(state -> data).getOrElse(Nil))
-
-
-  def being(validator:Validator) = {
-    validators = validators :+ validator //TODO make immutable
-    this
-  }
-  def and(validator:Validator) =
-    being(validator)
-  def having(validator:Validator) =
-    being(validator)
-
-  def unapply(data: Any): Option[V] =
-    parent.get(key, data).map {
-      case value if rc.isAssignableFrom(value.getClass) =>
-        value.asInstanceOf[V]
-    }
-
-  def validator:PartialFunction[(DataState, Option[Any]), List[ValidationFailure]] = {
-    case (_, Some(value)) if !rc.isAssignableFrom(value.getClass) =>
-      List(UnexpectedTypeFailure())
-  }
-}
-
-
-object Validators {
-
-  val Immutable = new Validator {
-    def validator: PartialFunction[(DataState, Option[Any]), List[ValidationFailure]] = {
-      case v@(Delta, Some(_)) =>
-        List(ImmutableFailure())
-      case v =>
-        Nil
-    }
-  }
-
-  val Required = new Validator {
-    def validator:PartialFunction[(DataState, Option[Any]), List[ValidationFailure]] = {
-      case v@(New, None) =>
-        List(RequiredFailure())
-      case v =>
-        Nil
-    }
-  }
-
-  def >(value:Double) = new Validator {
-    def validator: PartialFunction[(DataState, Option[Any]), List[ValidationFailure]] = {
-      case (_, Some(i:Int)) if i <= value =>
-        List(PlaceHolderFailure())
-      case (_, Some(l:Long)) if l <= value =>
-        List(PlaceHolderFailure())
-      case (_, Some(d:Double)) if d <= value =>
-        List(PlaceHolderFailure())
-      case (_, Some(f:Float)) if f <= value =>
-        List(PlaceHolderFailure())
-    }
-  }
+case class Maybe[T](f:JType => Option[T]) {
+  def unapply(t:JType) =
+    Some(f(t))
 }

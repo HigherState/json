@@ -1,6 +1,7 @@
 package org.higherState.json
 
 import scala.collection.GenTraversableOnce
+import org.higherState.json.Path
 
 trait JObject extends Any with JType {
 
@@ -99,11 +100,11 @@ trait JObject extends Any with JType {
 
   def get(path:Path):Option[JType] =
     path.parts match {
-      case head :: Nil =>
+      case head +: Vector() =>
         get(head)
-      case head :: tail =>
+      case head +: tail =>
         get(head).asJObject.flatMap(_.get(Path(tail)))
-      case Nil =>
+      case Vector() =>
         Some(this)
     }
 
@@ -162,12 +163,5 @@ object JObject {
     JObjectImpl(Map.empty[String, JType])
 }
 
-case class Path(parts:List[String]) extends AnyVal {
-  def \(part:String) = Path(parts ++ List(part))
 
-  def apply(part:String) = Path(parts ++ List(part))
-}
 
-object Path {
-  val empty = Path(Nil)
-}

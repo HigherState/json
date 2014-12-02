@@ -4,7 +4,6 @@ import org.joda.time.DateTime
 
 package object json {
 
-  type Parent = Option[(String, ObjectContract[_, _])]
   object && {
     def unapply[A](a: A) = Some((a, a))
   }
@@ -101,7 +100,7 @@ package object json {
   }
   implicit class StringtoJ(val value:String) extends AnyVal {
     def j = JText(value)
-    def \ = Path(List(value))
+    def \ = Path(Vector(value))
   }
   implicit class MaptoJ(val value:Map[String,JType]) extends AnyVal {
     def j = JObject(value)
