@@ -15,11 +15,12 @@ trait Validator {
  def || (v:Validator):Validator = OrValidator(this, v)
 }
 
-case class UnexpectedTypeFailure(path:Path, expectedType:Class[_]) extends ValidationFailure
+case class UnexpectedTypeFailure(path:Path, expectedType:String) extends ValidationFailure
 case class ImmutableFailure(path:Path) extends ValidationFailure
 case class RequiredFailure(path:Path) extends ValidationFailure
 case class BoundFailure(path:Path, message:String) extends ValidationFailure
 case class NotNullFailure(path:Path) extends ValidationFailure
+case class ReservedFailure(path:Path) extends ValidationFailure
 
 case class AndValidator(left:Validator, right:Validator) extends Validator {
   def validate(value:Option[JType], currentState:Option[JType], path:Path):Seq[ValidationFailure] =
@@ -67,6 +68,13 @@ object Validators {
     }
   }
 
+  val reserved = new SimpleValidator  {
+    def maybeValid(path:Path) = {
+      case (Some(_), _) =>
+        ReservedFailure(path)
+    }
+  }
+
   val notNull = new SimpleValidator {
     def maybeValid(path: Path) = {
       case (Some(JNull), _) =>
@@ -104,5 +112,18 @@ object Validators {
       case (Some(JNumber(n)), _) if n.doubleValue() >= double =>
         BoundFailure(path, s"Value $n is not less than or equal to $value")
     }
+  }
+
+  def as[T <: Contract](contract:T) = new Validator {
+    def validate(value: Option[JType], currentState: Option[JType], path: Path): Seq[ValidationFailure] =
+      value.collect {
+        case JArray(seq) =>
+          seq.zipWithIndex.flatMap{
+            case (j:JObject, i) =>
+              contract.validate(j, None, path \ i.toString)
+            case (_, i) =>
+              Seq(UnexpectedTypeFailure(path \ i.toString, "JObject"))
+          }
+      }.getOrElse(Seq.empty)
   }
 }

@@ -4,6 +4,8 @@ import org.joda.time.DateTime
 
 package object json {
 
+  type JMap = Map[String, JType]
+
   object && {
     def unapply[A](a: A) = Some((a, a))
   }

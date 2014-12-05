@@ -1,15 +1,14 @@
 package org.higherState.json
 
-import scala.reflect._
 import reflect.runtime.universe._
-import scala.reflect.runtime.{universe=>ru}
+import scala.reflect.runtime.{currentMirror=>cm,universe=>ru}
 import org.higherState.validation.ValidationFailure
 
 abstract class Contract extends PropertyMapper {
   implicit protected def path:Path = Path.empty
 
-  def validate(value:JType, currentState:Option[JType] = None):Seq[ValidationFailure] =
-    contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key))
+  def validate(value:JType, currentState:Option[JType] = None, path:Path = this.path):Seq[ValidationFailure] =
+    contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key, path \ p.key))
 }
 
 trait SubContract extends PropertyMapper {
@@ -18,41 +17,33 @@ trait SubContract extends PropertyMapper {
 
 sealed trait PropertyMapper {
   lazy val contractProperties:Seq[Property[_]] = {
-    val mirror = ru.runtimeMirror(this.getClass.getClassLoader)
-    val r = mirror.reflect(this)
-    val t = ru.appliedType(r.symbol.asType)
+    val r = cm.reflect(this)
+    val t = ru.appliedType(r.symbol.asType.toType)
     val propertyErasure = typeOf[Property[_]].erasure
-    t.members.collect{ case m:MethodSymbol if m.isPublic && m.typeSignature.resultType.erasure == propertyErasure =>
+    t.members.collect{ case m:MethodSymbol if m.isPublic && m.returnType.erasure == propertyErasure && !m.isConstructor =>
       r.reflectMethod(m)().asInstanceOf[Property[_]]// reflectField doesnt work oddly
     }.toSeq
   }
 }
 
-class Property[T](val key:String, validator:Validator = EmptyValidator)(implicit parentPath:Path, tag:ClassTag[T]) extends PropertyMapper {
+class Property[T <: Any](val key:String, validator:Validator = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[T]) extends PropertyMapper {
   implicit protected val path:Path = parentPath \ key
 
-  private lazy val _class:Class[_] = {
-    val c = classTag[T].runtimeClass
-    if (c == classTag[Nothing].runtimeClass) classTag[JType].runtimeClass
-    else c
-  }
-
-  def unapply(t:JType) = path(t).collect {
-    case j if _class.isAssignableFrom(j.getClass) => j.asInstanceOf[T]
-    case JType(value) if value != null && _class.isAssignableFrom(value.getClass) => value.asInstanceOf[T]
-  }
+  def unapply(t:JType):Option[T] =
+    path(t).flatMap(pattern.unapply)
 
   val ? = Maybe(unapply)
 
-  def validate(value: Option[JType], currentState: Option[JType]): Seq[ValidationFailure] = {
+  def validate(value: Option[JType], currentState: Option[JType], path:Path): Seq[ValidationFailure] = {
     val typeMatch =
       value.collect {
-        case j if !(j == JNull || _class.isAssignableFrom(j.getClass) || _class.isAssignableFrom(j.value.getClass)) =>
-          UnexpectedTypeFailure(path, _class)
+        case j if j != JNull && pattern.unapply(j).isEmpty =>
+          UnexpectedTypeFailure(path, pattern.toString)
       }
+
     val valid =  validator.validate(value, currentState, path)
-    val properties = contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key))
-    valid ++ typeMatch ++ properties
+    val properties = contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key, path \ p.key))
+    valid ++ typeMatch  ++ properties
   }
 }
 
@@ -60,3 +51,68 @@ case class Maybe[T](f:JType => Option[T]) {
   def unapply(t:JType) =
     Some(f(t))
 }
+
+trait Pattern[T] {
+  def unapply(json:JType):Option[T]
+  def apply(t:T):JType
+}
+
+trait JsonPatterns {
+
+  implicit val string = new Pattern[String] {
+    def unapply(json: JType): Option[String] =
+      json match {
+        case JText(j) => Some(j)
+        case _ => None
+      }
+
+    def apply(t: String): JType =
+      JText(t)
+  }
+
+  implicit val long = new Pattern[Long] {
+    def unapply(json: JType): Option[Long] =
+      json match {
+        case JLong(j) => Some(j)
+        case _ => None
+      }
+
+    def apply(t: Long): JType =
+      JLong(t)
+  }
+
+  implicit val map = new Pattern[JMap] {
+    def unapply(json: JType): Option[JMap] =
+      json match {
+        case JObject(j) => Some(j)
+        case _ => None
+      }
+
+    def apply(t:JMap): JType =
+      JObject(t)
+  }
+
+  implicit def seq[T](implicit pattern:Pattern[T]) = new Pattern[Seq[T]] {
+    def unapply(json: JType): Option[Seq[T]] =
+      json match {
+        case JArray(j) => Some(j.collect{ case pattern(e) => e})
+        case _ => None
+      }
+
+    def apply(t: Seq[T]): JType =
+      JArray(t.map(pattern.apply))
+  }
+
+  implicit def tuple[T1,T2](implicit pattern1:Pattern[T1], pattern2:Pattern[T2]) = new Pattern[(T1, T2)] {
+    def unapply(json: JType): Option[(T1, T2)] =
+      json match {
+        case JArray(pattern1(j1) +: pattern2(j2) +: _) => Some(j1 -> j2)
+        case _ => None
+      }
+
+    def apply(t: (T1, T2)): JType =
+      JArray(Seq(pattern1(t._1), pattern2(t._2)))
+  }
+}
+
+object DefaultPatterns extends JsonPatterns

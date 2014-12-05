@@ -5,6 +5,7 @@ import org.scalatest.concurrent.ScalaFutures
 
 class ContractTests extends FunSuite with Matchers with ScalaFutures {
   import Validators._
+  import DefaultPatterns._
 
   trait Created extends SubContract {
     val user = new Property[String]("name")
@@ -13,13 +14,13 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
 
   trait Metadata extends SubContract {
     val name = new Property[String]("name", required && notNull)
-    val created = new Property("created")
+    val created = new Property[JMap]("created") with Created
   }
 
   object Document extends Contract with Created {
     val id = new Property[String]("Id", immutable)
-    val age = new Property[JLong]("age", Validators.< (125) && Validators.>= (0))
-    val metadata = new Property("metadata") with Metadata
+    val age = new Property[Long]("age", Validators.< (125) && Validators.>= (0))
+    val metadata = new Property[JMap]("metadata") with Metadata
   }
 
   test("Contract extractor test") {
@@ -36,6 +37,26 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     }
 
     println(Document.validate(document, Some(JObject("Id" -> "1231-123142-134134-241225".j, "metadata" -> JObject("name" -> "bob".j)))))
+  }
+
+  object Collection extends Contract {
+    val coll = new Property[Seq[String]]("coll", as(Document))
+    val tupl = new Property[(Long, String)]("tupl")
+  }
+
+  test("Collection") {
+    val c = JObject("coll" -> JArray("one".j, "two".j, 2.j), "tupl" -> JArray(4.j, "four".j))
+
+    c match {
+      case Collection.coll(v) =>
+        println(v)
+    }
+    c match {
+      case Collection.tupl((l, r)) =>
+        println(l, r)
+    }
+
+    println(Collection.validate(c))
   }
 
 }

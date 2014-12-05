@@ -11,7 +11,7 @@ case class JArray(value:Seq[JType]) extends AnyVal with JType {
 object JArray {
 
   def apply(elem:JType, elems:JType*):JArray =
-    JArray(elem :: elems.toList)
+    JArray(elem +: elems)
 
   val empty = JArray(Seq.empty[JType])
 }
