@@ -1,21 +1,17 @@
 package org.higherState.json
 
+case class Path(segments:Segments) extends AnyVal {
+  def \(part:String) = Path(segments :+ Left(part))
+  def \(part:Int) = Path(segments :+ Right(part))
+  def ++(path:Path) = Path(segments ++ path.segments)
 
-case class Path(parts:Vector[String]) extends AnyVal {
-  def \(part:String) = Path(parts :+ part)
+  override def toString = segments.map(_.merge).mkString("\\")
 
-  def apply(jType:JType):Option[JType] =
-    (parts, jType) match {
-      case (Vector(), _) => Some(jType)
-      case (head +: tail, j:JObject) => j.get(head).flatMap(Path(tail)(_))
-      case _ => None
-    }
-
-  override def toString = parts.mkString("\\")
 }
 
 object Path {
   val empty = Path(Vector.empty)
 
-  def apply(parts:String*):Path = Path(parts.toVector)
+  def apply(s:String*):Path =
+    Path(s.toVector.map(Left(_)))
 }

@@ -9,6 +9,8 @@ abstract class Contract extends PropertyMapper {
 
   def validate(value:JType, currentState:Option[JType] = None, path:Path = this.path):Seq[ValidationFailure] =
     contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key, path \ p.key))
+
+  def apply[R](f:this.type => R):R = f(this)
 }
 
 trait SubContract extends PropertyMapper {
@@ -30,7 +32,12 @@ class Property[T <: Any](val key:String, validator:Validator = EmptyValidator)(i
   implicit protected val path:Path = parentPath \ key
 
   def unapply(t:JType):Option[T] =
-    path(t).flatMap(pattern.unapply)
+    get(t)
+
+  def apply[R](f:this.type => R):R = f(this)
+
+  def get(t:JType):Option[T] =
+    Lens.getValue(t, path.segments).flatMap(pattern.unapply)
 
   val ? = Maybe(unapply)
 
@@ -45,6 +52,31 @@ class Property[T <: Any](val key:String, validator:Validator = EmptyValidator)(i
     val properties = contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key, path \ p.key))
     valid ++ typeMatch  ++ properties
   }
+
+  def set =
+    (value:T) => (j:JType) => Lens.setValue(Some(j), path.segments, pattern(value))
+  def modify =
+    (func:T => T) => (j:JType) =>
+      Lens.getValue(j, path.segments)
+      .flatMap(pattern.unapply)
+      .fold[JType](j)(v => Lens.setValue(Some(j), path.segments, pattern(func(v))))
+  def maybeModify =
+    (func:Option[T] => T) => (j:JType) => {
+    val current = Lens.getValue(j, path.segments).flatMap(pattern.unapply)
+    Lens.setValue(Some(j), path.segments, pattern(func(current)))
+  }
+  def clear =
+    (j:JType) => Lens.removeValue(j, path.segments)
+  def move =
+    (p:Property[T]) => (j:JType) => {
+      Lens.getValue(j, path.segments) match {
+        case None =>
+          Lens.removeValue(j, p.path.segments)
+        case Some(value) =>
+          val j2 = Lens.removeValue(j, path.segments)
+          Lens.setValue(Some(j2), p.path.segments, value)
+      }
+    }
 }
 
 case class Maybe[T](f:JType => Option[T]) {

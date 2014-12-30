@@ -2,13 +2,14 @@ package org.higherState.json
 
 import org.scalatest.{Matchers, FunSuite}
 import org.scalatest.concurrent.ScalaFutures
+import shapeless.HNil
 
 class ContractTests extends FunSuite with Matchers with ScalaFutures {
   import Validators._
   import DefaultPatterns._
 
   trait Created extends SubContract {
-    val user = new Property[String]("name")
+    val user = new Property[String]("user")
     val time = new Property[Long]("time")
   }
 
@@ -57,6 +58,26 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     }
 
     println(Collection.validate(c))
+  }
+
+  test("Single setting and modifying") {
+    val document = JObject("Id" -> "1231-123142-134134-241224".j, "age" -> 123.j, "metadata" -> JObject())
+    println(Document.metadata.name.set("John")(document))
+    println(Document.age.modify(_ + 1)(document))
+  }
+
+  test("Composition of setters") {
+    import Compositor._
+    val document = JObject("Id" -> "1231-123142-134134-241224".j, "age" -> 123.j, "metadata" -> JObject("name" -> "John".j))
+
+    val modify = Document{d =>
+      d.age.modify(_ + 1) ~
+      d.metadata{m =>
+        m.name.move(m.created.user)
+      } ~
+      d.id.clear
+    }
+    println(modify(document))
   }
 
 }

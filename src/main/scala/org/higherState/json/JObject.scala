@@ -99,14 +99,7 @@ trait JObject extends Any with JType {
     value.get(key)
 
   def get(path:Path):Option[JType] =
-    path.parts match {
-      case head +: Vector() =>
-        get(head)
-      case head +: tail =>
-        get(head).asJObject.flatMap(_.get(Path(tail)))
-      case Vector() =>
-        Some(this)
-    }
+    Lens.getValue(this, path.segments)
 
   def getOrElse(key:String, orElse: => JType) =
     value.getOrElse(key, orElse)

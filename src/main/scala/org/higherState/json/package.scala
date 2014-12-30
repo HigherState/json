@@ -5,6 +5,7 @@ import org.joda.time.DateTime
 package object json {
 
   type JMap = Map[String, JType]
+  type Segments = Vector[Either[String, Int]]
 
   object && {
     def unapply[A](a: A) = Some((a, a))
@@ -102,7 +103,7 @@ package object json {
   }
   implicit class StringtoJ(val value:String) extends AnyVal {
     def j = JText(value)
-    def \ = Path(Vector(value))
+    def \ = Path(Vector(Left(value)))
   }
   implicit class MaptoJ(val value:Map[String,JType]) extends AnyVal {
     def j = JObject(value)
