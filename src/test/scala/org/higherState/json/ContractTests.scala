@@ -5,7 +5,7 @@ import org.scalatest.concurrent.ScalaFutures
 import shapeless.HNil
 
 class ContractTests extends FunSuite with Matchers with ScalaFutures {
-  import Validators._
+  import Validation._
   import DefaultPatterns._
 
   trait Created extends SubContract {
@@ -20,7 +20,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
 
   object Document extends Contract with Created {
     val id = new Property[String]("Id", immutable)
-    val age = new Property[Long]("age", Validators.< (125) && Validators.>= (0))
+    val age = new Property[Long]("age", Validation.< (125) && Validation.>= (0))
     val metadata = new Property[JMap]("metadata") with Metadata
   }
 
@@ -41,7 +41,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
   }
 
   object Collection extends Contract {
-    val coll = new Property[Seq[String]]("coll", as(Document))
+    val coll = new Property[Seq[String]]("coll", forall(Document))
     val tupl = new Property[(Long, String)]("tupl")
   }
 

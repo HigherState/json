@@ -1,7 +1,6 @@
 package org.higherState.json
 
 import scala.collection.GenTraversableOnce
-import org.higherState.json.Path
 
 trait JObject extends Any with JType {
 

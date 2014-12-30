@@ -4,13 +4,23 @@ import reflect.runtime.universe._
 import scala.reflect.runtime.{currentMirror=>cm,universe=>ru}
 import org.higherState.validation.ValidationFailure
 
-abstract class Contract extends PropertyMapper {
+abstract class Contract extends PropertyMapper with Validator {
   implicit protected def path:Path = Path.empty
 
-  def validate(value:JType, currentState:Option[JType] = None, path:Path = this.path):Seq[ValidationFailure] =
-    contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key, path \ p.key))
+  def validate(value:JType, currentState:Option[JType] = None):Seq[ValidationFailure] =
+    contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key, Path.empty))
 
   def apply[R](f:this.type => R):R = f(this)
+
+  def validate(value: Option[JType], currentState: Option[JType], path: Path): Seq[ValidationFailure] =
+    value.fold(Seq.empty[ValidationFailure]){ v =>
+      contractProperties.flatMap(p => p.validate(v \ p.key, currentState \ p.key, path))
+    }
+
+  def getSchema = JObject(
+    "type" -> "object".j,
+    "properties" -> JObject(contractProperties.map(p => p.key -> p.getSchema):_*)
+  )
 }
 
 trait SubContract extends PropertyMapper {
@@ -26,6 +36,8 @@ sealed trait PropertyMapper {
       r.reflectMethod(m)().asInstanceOf[Property[_]]// reflectField doesnt work oddly
     }.toSeq
   }
+
+  def getSchema:JObject
 }
 
 class Property[T <: Any](val key:String, validator:Validator = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[T]) extends PropertyMapper {
@@ -77,6 +89,12 @@ class Property[T <: Any](val key:String, validator:Validator = EmptyValidator)(i
           Lens.setValue(Some(j2), p.path.segments, value)
       }
     }
+
+  def getSchema:JObject =
+    if (contractProperties.isEmpty)
+      pattern.getSchema ++ validator.getSchema
+    else
+      pattern.getSchema ++ validator.getSchema + ("properties" -> JObject(contractProperties.map(p => p.key -> p.getSchema):_*))
 }
 
 case class Maybe[T](f:JType => Option[T]) {
@@ -87,9 +105,14 @@ case class Maybe[T](f:JType => Option[T]) {
 trait Pattern[T] {
   def unapply(json:JType):Option[T]
   def apply(t:T):JType
+  def getSchema:JObject
 }
 
 trait JsonPatterns {
+
+  val TYPE = "type"
+  val ITEMS = "items"
+  val PROPERTIES = "properties"
 
   implicit val string = new Pattern[String] {
     def unapply(json: JType): Option[String] =
@@ -100,17 +123,63 @@ trait JsonPatterns {
 
     def apply(t: String): JType =
       JText(t)
+
+    def getSchema: JObject = JObject(TYPE -> "string".j)
   }
 
   implicit val long = new Pattern[Long] {
     def unapply(json: JType): Option[Long] =
       json match {
         case JLong(j) => Some(j)
+        case JDouble(j) if j % 1 == 0 => Some(j.toLong)
         case _ => None
       }
 
     def apply(t: Long): JType =
       JLong(t)
+
+    def getSchema: JObject = JObject(TYPE -> "long".j)
+  }
+  implicit val int = new Pattern[Int] {
+    def unapply(json: JType): Option[Int] =
+      json match {
+        case JLong(j) if j >= Int.MinValue && j <= Int.MaxValue =>
+          Some(j.toInt)
+        case JDouble(j) if j >= Int.MinValue && j <= Int.MaxValue  && j % 1 == 0 =>
+          Some(j.toInt)
+        case _ => None
+      }
+
+    def apply(t: Int): JType =
+      JLong(t)
+
+    def getSchema: JObject = JObject(TYPE -> "int".j)
+  }
+  implicit val double = new Pattern[Double] {
+    def unapply(json: JType): Option[Double] =
+      json match {
+        case JDouble(j) => Some(j)
+        case JLong(j) => Some(j)
+        case _ => None
+      }
+
+    def apply(t: Double): JType =
+      JDouble(t)
+
+    def getSchema: JObject = JObject(TYPE -> "double".j)
+  }
+  implicit val float = new Pattern[Float] {
+    def unapply(json: JType): Option[Float] =
+      json match {
+        case JDouble(j) if j >= Float.MinValue && j <= Float.MaxValue => Some(j.toFloat)
+        case JLong(j) => Some(j)
+        case _ => None
+      }
+
+    def apply(t: Float): JType =
+      JDouble(t)
+
+    def getSchema: JObject = JObject(TYPE -> "float".j)
   }
 
   implicit val map = new Pattern[JMap] {
@@ -122,6 +191,8 @@ trait JsonPatterns {
 
     def apply(t:JMap): JType =
       JObject(t)
+
+    def getSchema: JObject = JObject(TYPE -> "object".j)
   }
 
   implicit def seq[T](implicit pattern:Pattern[T]) = new Pattern[Seq[T]] {
@@ -133,6 +204,8 @@ trait JsonPatterns {
 
     def apply(t: Seq[T]): JType =
       JArray(t.map(pattern.apply))
+
+    def getSchema: JObject = JObject(TYPE -> "array".j, ITEMS -> pattern.getSchema)
   }
 
   implicit def tuple[T1,T2](implicit pattern1:Pattern[T1], pattern2:Pattern[T2]) = new Pattern[(T1, T2)] {
@@ -144,6 +217,9 @@ trait JsonPatterns {
 
     def apply(t: (T1, T2)): JType =
       JArray(Seq(pattern1(t._1), pattern2(t._2)))
+
+    def getSchema: JObject =
+      JObject(TYPE -> "array".j, ITEMS -> JArray(pattern1.getSchema, pattern2.getSchema))
   }
 }
 
