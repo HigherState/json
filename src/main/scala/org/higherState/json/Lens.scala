@@ -1,23 +1,29 @@
 package org.higherState.json
 
 trait Lens[T] {
-  def apply(obj:JType)(value:T):JType
+  def apply(obj:Json)(value:T):Json
 }
 
 object Lens {
 
-  def getValue(target:JType, segments:Segments):Option[JType] =
+  def getValue(target:Json, segments:Segments):Option[Json] =
     (segments, target) match {
-      case (Vector(), _) => Some(target)
-      case (Left(head) +: tail, j:JObject) => j.get(head).flatMap(getValue(_, tail))
-      case (Right(head) +: tail, j:JArray) => j \ head
+      case (Vector(), _) =>
+        Some(target)
+      case (Left(head) +: tail, obj:JObject) =>
+        obj.value.get(head).flatMap(getValue(_, tail))
+      case (Right(head) +: tail, array:JArray) =>
+        if (head < array.value.size)
+          Some(array.value(head))
+        else
+          None
       case _ => None
     }
 
-  def setValue(target:Option[JType], segments:Segments, value:JType):JType =
+  def setValue(target:Option[Json], segments:Segments, value:Json):Json =
     (segments, target) match {
       case (Left(key) +: tail, Some(obj:JObject)) =>
-        obj + (key -> setValue(obj.get(key), tail, value))
+        obj + (key -> setValue(obj.value.get(key), tail, value))
       case (Left(key) +: tail, _) =>
         JObject(key -> setValue(None, tail, value))
       case (Right(index) +: tail, Some(array:JArray)) =>
@@ -33,19 +39,19 @@ object Lens {
         value
     }
 
-  def removeValue(target:JType, segments:Segments):JType =
+  def removeValue(target:Json, segments:Segments):Json =
     (segments, target) match {
       case (Left(key) +: Vector(), obj:JObject) =>
         obj - key
       case (Left(key) +: tail, obj:JObject) =>
-        obj.get(key).fold(obj)(v => obj + (key -> removeValue(v, tail)))
+        obj.value.get(key).fold(obj)(v => obj + (key -> removeValue(v, tail)))
       case _ =>
         target
     }
 }
 object Compositor {
-  implicit class F(val f: JType => JType) extends AnyVal {
-    def ~(f2: JType => JType): JType => JType =
-      (j: JType) => f2(f(j))
+  implicit class F(val f: Json => Json) extends AnyVal {
+    def ~(f2: Json => Json): Json => Json =
+      (j: Json) => f2(f(j))
   }
 }

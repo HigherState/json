@@ -8,7 +8,7 @@ case object Delta extends DataState
 
 trait Validator {
 
-  def validate(value:Option[JType], currentState:Option[JType], path:Path):Seq[ValidationFailure]
+  def validate(value:Option[Json], currentState:Option[Json], path:Path):Seq[ValidationFailure]
 
   def && (v:Validator):Validator = AndValidator(this, v)
 
@@ -25,7 +25,7 @@ case class NotNullFailure(path:Path) extends ValidationFailure
 case class ReservedFailure(path:Path) extends ValidationFailure
 
 case class AndValidator(left:Validator, right:Validator) extends Validator {
-  def validate(value:Option[JType], currentState:Option[JType], path:Path):Seq[ValidationFailure] =
+  def validate(value:Option[Json], currentState:Option[Json], path:Path):Seq[ValidationFailure] =
     left.validate(value, currentState, path:Path) ++ right.validate(value, currentState, path:Path)
 
   def getSchema: JObject =
@@ -33,7 +33,7 @@ case class AndValidator(left:Validator, right:Validator) extends Validator {
 }
 
 case class OrValidator(left:Validator, right:Validator) extends Validator {
-  def validate(value:Option[JType], currentState:Option[JType], path:Path):Seq[ValidationFailure] ={
+  def validate(value:Option[Json], currentState:Option[Json], path:Path):Seq[ValidationFailure] ={
     left.validate(value, currentState, path:Path) match {
       case Seq() => Seq()
       case list => right.validate(value, currentState, path:Path) match {
@@ -48,16 +48,16 @@ case class OrValidator(left:Validator, right:Validator) extends Validator {
 }
 
 case object EmptyValidator extends Validator {
-  def validate(value: Option[JType], currentState: Option[JType], path: Path): Seq[ValidationFailure] =
+  def validate(value: Option[Json], currentState: Option[Json], path: Path): Seq[ValidationFailure] =
     Nil
 
   def getSchema: JObject = JObject.empty
 }
 
 trait SimpleValidator extends Validator {
-  def maybeValid(path:Path):PartialFunction[(Option[JType],Option[JType]), ValidationFailure]
+  def maybeValid(path:Path):PartialFunction[(Option[Json],Option[Json]), ValidationFailure]
 
-  def validate(value: Option[JType], currentState: Option[JType], path:Path): Seq[ValidationFailure] =
+  def validate(value: Option[Json], currentState: Option[Json], path:Path): Seq[ValidationFailure] =
     maybeValid(path).lift(value -> currentState).toSeq
 }
 
@@ -149,7 +149,7 @@ object Validation {
     def getSchema: JObject = JObject("nonEmpty" -> JTrue)
   }
   def forall(validator:Validator) = new Validator {
-    def validate(value: Option[JType], currentState: Option[JType], pathContext: Path): Seq[ValidationFailure] =
+    def validate(value: Option[Json], currentState: Option[Json], pathContext: Path): Seq[ValidationFailure] =
       value collect {
         case JArray(seq) =>
           for {
