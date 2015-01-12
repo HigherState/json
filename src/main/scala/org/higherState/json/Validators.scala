@@ -29,7 +29,7 @@ case class AndValidator(left:Validator, right:Validator) extends Validator {
     left.validate(value, currentState, path:Path) ++ right.validate(value, currentState, path:Path)
 
   def getSchema: JObject =
-    left.getSchema ++ right.getSchema
+    JObject(left.getSchema.value ++ right.getSchema.value)
 }
 
 case class OrValidator(left:Validator, right:Validator) extends Validator {
@@ -62,6 +62,7 @@ trait SimpleValidator extends Validator {
 }
 
 object Validation {
+  import JsonConstructor._
 
   val immutable = new SimpleValidator {
     def maybeValid(path:Path) = {
@@ -96,40 +97,68 @@ object Validation {
     def getSchema: JObject = JObject("reserved" -> JTrue)
   }
 
-  def >(value:Number) = new SimpleValidator {
-    private val double = value.doubleValue()
+  sealed trait BoundedValidator extends SimpleValidator {
+    def doubleFail(n:Double):Boolean
+    def longFail(n:Long):Boolean
+    def message(n:Number):String
     def maybeValid(path:Path) = {
-      case (Some(JNumber(n)), _) if n.doubleValue() <= double =>
-        BoundFailure(path, s"Value $n is not greater than $value")
+      case (Some(JDouble(n)), _) if doubleFail(n) =>
+        BoundFailure(path, message(n))
+      case (Some(JLong(n)), _) if longFail(n) =>
+        BoundFailure(path, message(n))
     }
-    def getSchema: JObject = JObject("greaterThan" -> double.j)
   }
 
-  def >=(value:Number) = new SimpleValidator {
-    private val double = value.doubleValue()
-    def maybeValid(path:Path) = {
-      case (Some(JNumber(n)), _) if n.doubleValue() < double =>
-        BoundFailure(path, s"Value $n is not greater than or equal to $value")
-    }
-    def getSchema: JObject = JObject("greaterThanEquals" -> double.j)
+  def >[T](value:Long) = new BoundedValidator {
+    def doubleFail(n:Double):Boolean = n <= value
+    def longFail(n:Long):Boolean = n <= value
+    def message(n:Number):String = s"Value $n is not greater than $value"
+    def getSchema: JObject = JObject("greaterThan" -> value.j)
+  }
+  def >[T](value:Double) = new BoundedValidator {
+    def doubleFail(n:Double):Boolean = n <= value
+    def longFail(n:Long):Boolean = n <= value
+    def message(n:Number):String = s"Value $n is not greater than $value"
+    def getSchema: JObject = JObject("greaterThan" -> value.j)
   }
 
-  def <(value:Number) = new SimpleValidator {
-    private val double = value.doubleValue()
-    def maybeValid(path:Path) = {
-      case (Some(JNumber(n)), _) if n.doubleValue() >= double =>
-        BoundFailure(path, s"Value $n is not less than $value")
-    }
-    def getSchema: JObject = JObject("lessThan" -> double.j)
+  def >=[T](value:Long) = new BoundedValidator {
+    def doubleFail(n:Double):Boolean = n < value
+    def longFail(n:Long):Boolean = n < value
+    def message(n:Number):String = s"Value $n is not greater than or equal to $value"
+    def getSchema: JObject = JObject("greaterThanEquals" -> value.j)
+  }
+  def >=[T](value:Double) = new BoundedValidator {
+    def doubleFail(n:Double):Boolean = n < value
+    def longFail(n:Long):Boolean = n < value
+    def message(n:Number):String = s"Value $n is not greater than or equal to $value"
+    def getSchema: JObject = JObject("greaterThanEquals" -> value.j)
   }
 
-  def <=(value:Number) = new SimpleValidator {
-    private val double = value.doubleValue()
-    def maybeValid(path:Path) = {
-      case (Some(JNumber(n)), _) if n.doubleValue() >= double =>
-        BoundFailure(path, s"Value $n is not less than or equal to $value")
-    }
-    def getSchema: JObject = JObject("lessThanEquals" -> double.j)
+  def <[T](value:Long) = new BoundedValidator {
+    def doubleFail(n:Double):Boolean = n >= value
+    def longFail(n:Long):Boolean = n >= value
+    def message(n:Number):String = s"Value $n is not less than $value"
+    def getSchema: JObject = JObject("lessThan" -> value.j)
+  }
+  def <[T](value:Double) = new BoundedValidator {
+    def doubleFail(n:Double):Boolean = n <= value
+    def longFail(n:Long):Boolean = n <= value
+    def message(n:Number):String = s"Value $n is not less than $value"
+    def getSchema: JObject = JObject("lessThan" -> value.j)
+  }
+
+  def <=[T](value:Long) = new BoundedValidator {
+    def doubleFail(n:Double):Boolean = n > value
+    def longFail(n:Long):Boolean = n > value
+    def message(n:Number):String = s"Value $n is not less than or equal to $value"
+    def getSchema: JObject = JObject("lessThanEquals" -> value.j)
+  }
+  def <=[T](value:Double) = new BoundedValidator {
+    def doubleFail(n:Double):Boolean = n > value
+    def longFail(n:Long):Boolean = n > value
+    def message(n:Number):String = s"Value $n is not greater than or equal to $value"
+    def getSchema: JObject = JObject("lessThanEquals" -> value.j)
   }
 
   def minLength(value:Int) = new SimpleValidator {

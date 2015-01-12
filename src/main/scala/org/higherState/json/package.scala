@@ -8,4 +8,7 @@ package object json {
   object && {
     def unapply[A](a: A) = Some((a, a))
   }
+
+  val JTrue = JBool(true)
+  val JFalse = JBool(false)
 }

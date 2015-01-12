@@ -23,7 +23,7 @@ object Lens {
   def setValue(target:Option[Json], segments:Segments, value:Json):Json =
     (segments, target) match {
       case (Left(key) +: tail, Some(obj:JObject)) =>
-        obj + (key -> setValue(obj.value.get(key), tail, value))
+        JObject(obj.value + (key -> setValue(obj.value.get(key), tail, value)))
       case (Left(key) +: tail, _) =>
         JObject(key -> setValue(None, tail, value))
       case (Right(index) +: tail, Some(array:JArray)) =>
@@ -42,9 +42,9 @@ object Lens {
   def removeValue(target:Json, segments:Segments):Json =
     (segments, target) match {
       case (Left(key) +: Vector(), obj:JObject) =>
-        obj - key
+        JObject(obj.value - key)
       case (Left(key) +: tail, obj:JObject) =>
-        obj.value.get(key).fold(obj)(v => obj + (key -> removeValue(v, tail)))
+        obj.value.get(key).fold(obj)(v => JObject(obj.value + (key -> removeValue(v, tail))))
       case _ =>
         target
     }

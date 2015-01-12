@@ -1,30 +1,34 @@
 package org.higherState.json
 
-trait JsonConstructor {
+object JsonConstructor {
 
   implicit class StringtoJ(val value:String) extends AnyVal {
-    def j = JString(value)
+    def j:Json = JString(value)
     def \ = Path(Vector(Left(value)))
   }
   implicit class MaptoJ(val value:Map[String,Json]) extends AnyVal {
-    def j = JObject(value)
+    def j:Json  = JObject(value)
   }
   implicit class TupleItertoJ(val value:TraversableOnce[(String,Json)]) extends AnyVal {
-    def j = JObject(value.toMap)
+    def j:Json  = JObject(value.toMap)
   }
   implicit class InttoJ(val value:Int) extends AnyVal {
-    def j = JNumber(value)
+    def j:Json  = JLong(value)
   }
-  implicit class NumberToJ(val value:Number) extends AnyVal {
-    def j = JNumber(value)
+  implicit class LongtoJ(val value:Long) extends AnyVal {
+    def j:Json  = JLong(value)
+  }
+  implicit class FloattoJ(val value:Float) extends AnyVal {
+    def j:Json  = JDouble(value)
+  }
+  implicit class DoubletoJ(val value:Double) extends AnyVal {
+    def j:Json  = JDouble(value)
   }
   implicit class BooltoJ(val value:Boolean) extends AnyVal {
-    def j = JBool(value)
+    def j:Json  = JBool(value)
   }
 
   implicit class SeqtoJ(val value:Seq[Json]) extends AnyVal {
-    def j = JArray(value)
+    def j:Json  = JArray(value)
   }
 }
-
-object JsonConstructor extends JsonConstructor

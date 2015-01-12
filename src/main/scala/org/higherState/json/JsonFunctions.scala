@@ -20,7 +20,7 @@ trait JsonFunctions {
         (m.get(kvp._1), kvp._1, kvp._2) match {
           case (Some(j:JObject), key, d:JObject) =>
             val objectDelta = applyObjectDelta(j, d)
-            if (objectDelta.isEmpty) m - key
+            if (objectDelta.value.isEmpty) m - key
             else m + (key -> objectDelta)
           case (_, key, JNull) =>
             m - key

@@ -1,6 +1,6 @@
 package org.higherState.json
 
-trait JsonPath {
+object JsonPath {
 
   implicit class JPath(val json:Json) extends AnyVal {
     def \(key:String):Option[Json] =
@@ -23,5 +23,3 @@ trait JsonPath {
       json.flatMap(_\key)
   }
 }
-
-object JsonPath extends JsonPath
