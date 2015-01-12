@@ -19,7 +19,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
   }
 
   trait Document extends Contract with Created {
-    val id = Value[String]("Id", immutable)
+    val id = Value[String]("Id", immutable && required)
     val age = Value[Long]("age", Validation.< (125) && Validation.>= (0))
     val metadata = new Object("metadata") with Metadata
   }
@@ -45,12 +45,13 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
   trait Collection extends Contract {
     val coll = Array[String]("coll")
     val tupl = Value[(Long, String)]("tupl")
+    val obj = Array[Json]("objs", forall(Document))
   }
   object Collection extends Extractor with Collection
 
   test("Collection") {
     import Compositor._
-    val c = JObject("coll" -> Seq("one".j, "two".j, 2.j).j, "tupl" -> JArray(4.j, "four".j))
+    val c = JObject("coll" -> Seq("one".j, "two".j, 2.j).j, "tupl" -> JArray(4.j, "four".j), "obj" -> JArray(Map("Id" -> "123-412312312-123123".j).j))
 
     c match {
       case Collection.coll(v) =>
@@ -62,10 +63,13 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     }
     println(Collection.coll{ c =>
       c.append("three") ~
-      c.at(0).modify(_ + "t")
+      c.at(0).modify(_ + "_") ~
+      c.at(6).set("six") ~
+      c.at(2).move(c.at(4))
     }(c))
 
     println(Collection.validate(c))
+    println(Collection.getSchema)
   }
 
   test("Single setting and modifying") {

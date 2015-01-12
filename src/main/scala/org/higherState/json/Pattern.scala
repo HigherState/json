@@ -83,7 +83,16 @@ trait JsonPatterns {
     def getSchema: JObject = JObject(TYPE -> "object".j)
   }
 
-  implicit val obj = new Pattern[JObject] {
+  implicit val json = new Pattern[Json] {
+    protected def extractor = {
+      case j => j
+    }
+
+    def apply(t:Json): Json = t
+    def getSchema: JObject = JObject.empty
+  }
+
+  implicit val jobj = new Pattern[JObject] {
     protected def extractor = {
       case j:JObject => j
     }

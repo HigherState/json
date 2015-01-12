@@ -37,7 +37,7 @@ sealed trait PropertyMapper {
     val r = cm.reflect(this)
     val t = ru.appliedType(r.symbol.asType.toType)
     val propertyErasure = typeOf[Property].erasure
-    t.members.collect{ case m:MethodSymbol if m.isPublic && m.returnType.erasure == propertyErasure && !m.isConstructor =>
+    t.members.collect{ case m:MethodSymbol if m.isPublic && m.returnType <:< propertyErasure  && !m.isConstructor =>
       r.reflectMethod(m)().asInstanceOf[Property]// reflectField doesnt work oddly
     }.toSeq
   }
@@ -48,6 +48,9 @@ sealed trait PropertyMapper {
 sealed trait ValueLens[T] {
   def path:Path
   protected def pattern:Pattern[T]
+
+  def unapply(t:Json):Option[T] =
+    get(t)
 
   def get(t:Json):Option[T] =
     Lens.getValue(t, path.segments).flatMap(pattern.unapply)
@@ -66,7 +69,7 @@ sealed trait ValueLens[T] {
   def clear =
     (j:Json) => Lens.removeValue(j, path.segments)
   def move =
-    (p:Value[T]) => (j:Json) => {
+    (p:ValueLens[T]) => (j:Json) => {
       Lens.getValue(j, path.segments) match {
         case None =>
           Lens.removeValue(j, p.path.segments)
@@ -109,9 +112,6 @@ case class Value[T <: Any](key:String, validator:Validator = EmptyValidator)
                           extends Property with ValueLens[T] {
   val path:Path = parentPath \ key
 
-  def unapply(t:Json):Option[T] =
-    get(t)
-
   def validate(value: Option[Json], currentState: Option[Json], path:Path): Seq[ValidationFailure] = {
     val typeMatch =
       value.collect {
@@ -152,9 +152,6 @@ case class Array[T](key:String, validator:Validator = EmptyValidator)
 
   def apply[R](f:this.type => R):R = f(this)
 
-  def unapply(t:Json):Option[Seq[T]] =
-    get(t)
-
   def at(index:Int) = ArrayElement(index, this)
 
   def head = ArrayElement(0, this)
@@ -179,26 +176,8 @@ case class Array[T](key:String, validator:Validator = EmptyValidator)
     JObject(pattern.getSchema.value ++ validator.getSchema.value)
 }
 
-case class ArrayElement[T](index:Int, a:Array[T])(implicit pattern:Pattern[T]) {
+case class ArrayElement[T](index:Int, a:Array[T])(implicit protected val pattern:Pattern[T]) extends ValueLens[T]  {
   def path = a.path \ index
-  def unapply(t:Json):Option[T] =
-    a.unapply(t).flatMap{ s =>
-      if (index < s.length) Some(s(index))
-      else None
-    }
-
-  def set =
-    (value:T) => (j:Json) => Lens.setValue(Some(j), path.segments, pattern(value))
-  def modify =
-    (func:T => T) => (j:Json) =>
-      Lens.getValue(j, path.segments)
-        .flatMap(pattern.unapply)
-        .fold[Json](j)(v => Lens.setValue(Some(j), path.segments, pattern(func(v))))
-  def maybeModify =
-    (func:Option[T] => T) => (j:Json) => {
-      val current = Lens.getValue(j, path.segments).flatMap(pattern.unapply)
-      Lens.setValue(Some(j), path.segments, pattern(func(current)))
-    }
 }
 
 case class Maybe[T](f:Json => Option[T]) {
