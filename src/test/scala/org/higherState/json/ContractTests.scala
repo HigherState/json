@@ -1,5 +1,7 @@
 package org.higherState.json
 
+import java.util.UUID
+
 import org.scalatest.{Matchers, FunSuite}
 import org.scalatest.concurrent.ScalaFutures
 
@@ -19,14 +21,14 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
   }
 
   object Document extends Contract with Created {
-    val id = Value[String]("Id", immutable && required)
+    val id = Value[UUID]("Id", immutable && required)
     val age = Value[Long]("age", Validation.< (125) && Validation.>= (0))
     val metadata = new Object("metadata") with Metadata
   }
 
   test("Contract extractor test") {
 
-    val document = Map("Id" -> "1231-123142-134134-241224".j, "age" -> 123.j, "metadata" -> JObject.empty).j
+    val document = Map("Id" -> UUID.randomUUID().toString.j, "age" -> 123.j, "metadata" -> JObject.empty).j
 
     document match {
       case Document.age(age) && Document.metadata.name(bob) && Document.user.?(user) =>
@@ -38,9 +40,44 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     }
 
     println(Document.validate(document))
-    println(Document.validate(document, Some(JObject("Id" -> "1231-123142-134134-241225".j, "metadata" -> JObject("name" -> "bob".j)))))
-    println(Document.getSchema)
+    println(Document.validate(document, Some(JObject("Id" -> UUID.randomUUID().toString.j, "metadata" -> JObject("name" -> "bob".j)))))
+    println(Document.schema)
   }
+
+
+
+
+
+  test("Single setting and modifying") {
+    val document = Map("Id" -> UUID.randomUUID().toString.j, "age" -> 123.j, "metadata" -> JObject()).j
+    println(Document.metadata.name.set("John")(document))
+    println(Document.age.modify(_ + 1)(document))
+  }
+
+
+
+
+
+
+  test("Composition of setters") {
+    import Compositor._
+    val document = Map("Id" -> UUID.randomUUID().toString.j, "age" -> 123.j, "metadata" -> Map("name" -> "John".j).j).j
+
+    val modify = Document{d =>
+      d.age.modify(_ + 1) ~
+        d.metadata{m =>
+          m.name.move(m.created.user)
+        } ~
+        d.id.drop
+    }
+    println(modify(document))
+  }
+
+
+
+
+
+
 
   trait Collection extends Contract {
     val coll = Array[String]("coll")
@@ -53,7 +90,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     import Compositor._
     val c = JObject("coll" -> Seq("one".j, "two".j, 2.j).j,
       "tupl" -> JArray(4.j, "four".j),
-      "obj" -> JArray(Map("Id" -> "123-412312312-123123".j).j))
+      "obj" -> JArray(Map("Id" -> UUID.randomUUID().toString.j).j))
 
     c match {
       case Collection.coll(v) =>
@@ -77,33 +114,15 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     println {
       Collection.obj { c =>
         c.append(
-          (Document.id.set("12341234-12341234-1234123") ~
-            Document.age.set(34))(JObject.empty)
+          Document{ d =>
+            d.id.set(UUID.randomUUID()) ~
+            d.age.set(34)
+          }(JObject.empty)
         )
       }(c)
     }
     println(Collection.validate(c))
-    println(Collection.getSchema)
-  }
-
-  test("Single setting and modifying") {
-    val document = Map("Id" -> "1231-123142-134134-241224".j, "age" -> 123.j, "metadata" -> JObject()).j
-    println(Document.metadata.name.set("John")(document))
-    println(Document.age.modify(_ + 1)(document))
-  }
-
-  test("Composition of setters") {
-    import Compositor._
-    val document = Map("Id" -> "1231-123142-134134-241224".j, "age" -> 123.j, "metadata" -> Map("name" -> "John".j).j).j
-
-    val modify = Document{d =>
-      d.age.modify(_ + 1) ~
-      d.metadata{m =>
-        m.name.move(m.created.user)
-      } ~
-      d.id.drop
-    }
-    println(modify(document))
+    println(Collection.schema)
   }
 
 }

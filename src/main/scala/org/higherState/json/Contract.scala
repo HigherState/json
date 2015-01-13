@@ -19,9 +19,9 @@ trait Contract extends PropertyMapper with Validator {
       contractProperties.flatMap(p => p.validate(v \ p.key, currentState \ p.key, path \ p.key))
     }
 
-  def getSchema = JObject(
+  def schema = JObject(
     "type" -> "object".j,
-    "properties" -> JObject(contractProperties.map(p => p.key -> p.getSchema):_*)
+    "properties" -> JObject(contractProperties.map(p => p.key -> p.schema):_*)
   )
 }
 
@@ -42,7 +42,7 @@ sealed trait PropertyMapper {
     }.toSeq
   }
 
-  def getSchema:JObject
+  def schema:JObject
 }
 
 sealed trait ValueLens[T] {
@@ -87,24 +87,19 @@ abstract class Object(val key:String, validator:Validator = EmptyValidator)(impl
   def apply[R](f:this.type => R):R = f(this)
 
   def validate(value: Option[Json], currentState: Option[Json], path:Path): Seq[ValidationFailure] = {
-    val typeMatch =
-      value.collect {
-        case j if j != JNull && !j.isInstanceOf[JObject] =>
-          UnexpectedTypeFailure(path, pattern.toString)
-      }
-
+    val patternValidate = pattern.validate(value, currentState, path)
     val valid = validator.validate(value, currentState, path)
     val properties =
       value.fold(Seq.empty[ValidationFailure])(v => contractProperties.flatMap(p => p.validate(v \ p.key, currentState \ p.key, path \ p.key)))
-    valid ++ typeMatch ++ properties
+    patternValidate ++ valid ++ properties
   }
 
-  def getSchema:JObject =
+  def schema:JObject =
     JObject {
       if (contractProperties.isEmpty)
-        pattern.getSchema.value ++ validator.getSchema.value
+        pattern.schema.value ++ validator.schema.value
       else
-        pattern.getSchema.value ++ validator.getSchema.value + ("properties" -> JObject(contractProperties.map(p => p.key -> p.getSchema): _*))
+        pattern.schema.value ++ validator.schema.value + ("properties" -> JObject(contractProperties.map(p => p.key -> p.schema): _*))
     }
 }
 
@@ -114,20 +109,15 @@ case class Value[T <: Any](key:String, validator:Validator = EmptyValidator)
   val path:Path = parentPath \ key
 
   def validate(value: Option[Json], currentState: Option[Json], path:Path): Seq[ValidationFailure] = {
-    val typeMatch =
-      value.collect {
-        case j if j != JNull && pattern.unapply(j).isEmpty =>
-          UnexpectedTypeFailure(path, pattern.toString)
-      }
-
+    val patternValidate = pattern.validate(value, currentState, path)
     val valid = validator.validate(value, currentState, path)
-    valid ++ typeMatch
+    patternValidate ++ valid
   }
 
   val ? = Maybe(unapply)
 
-  def getSchema:JObject =
-    JObject(pattern.getSchema.value ++ validator.getSchema.value)
+  def schema:JObject =
+    JObject(pattern.schema.value ++ validator.schema.value)
 }
 
 case class Array[T](key:String, validator:Validator = EmptyValidator)
@@ -143,21 +133,9 @@ case class Array[T](key:String, validator:Validator = EmptyValidator)
   def head = ArrayElement(0, this)
 
   def validate(value: Option[Json], currentState: Option[Json], path:Path): Seq[ValidationFailure] = {
-    val typeMatch =
-      value.collect {
-        case j if j != JNull && pattern.unapply(j).isEmpty =>
-          List(UnexpectedTypeFailure(path, pattern.toString))
-        case JArray(seq) =>
-          seq.zipWithIndex.flatMap{p =>
-            if (elementPattern.unapply(p._1).isEmpty)
-              Some(UnexpectedTypeFailure(path \ p._2, pattern.toString))
-            else
-              None
-          }
-      }.getOrElse(Nil)
-
+    val patternValidate = pattern.validate(value, currentState, path)
     val valid = validator.validate(value, currentState, path)
-    valid ++ typeMatch
+    patternValidate ++ valid
   }
 
   val ? = Maybe(unapply)
@@ -165,8 +143,8 @@ case class Array[T](key:String, validator:Validator = EmptyValidator)
   def append =
     (value:T) => modify(s => s :+ value)
 
-  def getSchema:JObject =
-    JObject(pattern.getSchema.value ++ validator.getSchema.value)
+  def schema:JObject =
+    JObject(pattern.schema.value ++ validator.schema.value)
 }
 
 case class ArrayElement[T](index:Int, a:Array[T])(implicit protected val pattern:Pattern[T]) extends ValueLens[T]  {
