@@ -6,17 +6,17 @@ import org.higherState.validation.ValidationFailure
 import JsonConstructor._
 import JsonPath._
 
-abstract class Extractor extends PropertyMapper with Validator {
+trait Contract extends PropertyMapper with Validator {
   implicit protected def path:Path = Path.empty
 
   def validate(value:Json, currentState:Option[Json] = None):Seq[ValidationFailure] =
-    contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key, Path.empty))
+    contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key, Path.empty \ p.key))
 
   def apply[R](f:this.type => R):R = f(this)
 
   def validate(value: Option[Json], currentState: Option[Json], path: Path): Seq[ValidationFailure] =
     value.fold(Seq.empty[ValidationFailure]){ v =>
-      contractProperties.flatMap(p => p.validate(v \ p.key, currentState \ p.key, path))
+      contractProperties.flatMap(p => p.validate(v \ p.key, currentState \ p.key, path \ p.key))
     }
 
   def getSchema = JObject(
@@ -25,7 +25,7 @@ abstract class Extractor extends PropertyMapper with Validator {
   )
 }
 
-trait Contract extends PropertyMapper {
+trait SubContract extends PropertyMapper {
   implicit protected def path:Path
 }
 
@@ -66,16 +66,16 @@ sealed trait ValueLens[T] {
       val current = Lens.getValue(j, path.segments).flatMap(pattern.unapply)
       Lens.setValue(Some(j), path.segments, pattern(func(current)))
     }
-  def clear =
-    (j:Json) => Lens.removeValue(j, path.segments)
+  def drop =
+    (j:Json) => Lens.dropValue(j, path.segments)
   def move =
     (p:ValueLens[T]) => (j:Json) => {
       Lens.getValue(j, path.segments) match {
         case None =>
-          Lens.removeValue(j, p.path.segments)
+          Lens.dropValue(j, p.path.segments)
         case Some(value) =>
-          val j2 = Lens.removeValue(j, path.segments)
-          Lens.setValue(Some(j2), p.path.segments, value)
+          val j2 = Lens.dropValue(j, path.segments)
+          Lens.insertValue(Some(j2), p.path.segments, value)
       }
     }
 }
@@ -94,7 +94,8 @@ abstract class Object(val key:String, validator:Validator = EmptyValidator)(impl
       }
 
     val valid = validator.validate(value, currentState, path)
-    val properties = contractProperties.flatMap(p => p.validate(value \ p.key, currentState \ p.key, path \ p.key))
+    val properties =
+      value.fold(Seq.empty[ValidationFailure])(v => contractProperties.flatMap(p => p.validate(v \ p.key, currentState \ p.key, path \ p.key)))
     valid ++ typeMatch ++ properties
   }
 
@@ -129,21 +130,6 @@ case class Value[T <: Any](key:String, validator:Validator = EmptyValidator)
     JObject(pattern.getSchema.value ++ validator.getSchema.value)
 }
 
-//case class ObjectArray[T <: Contract](key:String, validator:Validator = EmptyValidator)
-//                                     (implicit parentPath:Path, protected val pattern:Pattern[Seq[Json]])
-//  extends Property with ValueLens[Seq[Json]] {
-//  def validate(value: Option[Json], currentState: Option[Json], path:Path): Seq[ValidationFailure] = {
-//    val typeMatch =
-//      value.collect {
-//        case j if j != JNull && pattern.unapply(j).isEmpty =>
-//          UnexpectedTypeFailure(path, pattern.toString)
-//      }
-//
-//    val valid = validator.validate(value, currentState, path)
-//    valid ++ typeMatch
-//  }
-//}
-
 case class Array[T](key:String, validator:Validator = EmptyValidator)
                    (implicit parentPath:Path, protected val pattern:Pattern[Seq[T]], elementPattern:Pattern[T])
   extends Property with ValueLens[Seq[T]] {
@@ -160,8 +146,15 @@ case class Array[T](key:String, validator:Validator = EmptyValidator)
     val typeMatch =
       value.collect {
         case j if j != JNull && pattern.unapply(j).isEmpty =>
-          UnexpectedTypeFailure(path, pattern.toString)
-      }
+          List(UnexpectedTypeFailure(path, pattern.toString))
+        case JArray(seq) =>
+          seq.zipWithIndex.flatMap{p =>
+            if (elementPattern.unapply(p._1).isEmpty)
+              Some(UnexpectedTypeFailure(path \ p._2, pattern.toString))
+            else
+              None
+          }
+      }.getOrElse(Nil)
 
     val valid = validator.validate(value, currentState, path)
     valid ++ typeMatch
