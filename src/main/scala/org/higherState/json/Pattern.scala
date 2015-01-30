@@ -4,7 +4,7 @@ import java.util.UUID
 
 import org.higherState.validation.ValidationFailure
 
-trait Pattern[T] extends Validator {
+trait Pattern[T] {
   protected def extractor:PartialFunction[Json, T]
   def apply(t:T):Json
   def schema:JObject
@@ -12,35 +12,55 @@ trait Pattern[T] extends Validator {
   def unapply(json:Json):Option[T] =
     extractor.lift(json)
 }
-
-
-trait JsonPatterns {
-  import JsonConstructor._
-
+object JsonSchema {
   val TYPE = "type"
   val ITEMS = "items"
   val PROPERTIES = "properties"
+  val REQUIRED = "required"
+  val DEFAULT = "default"
+}
+abstract class RequiredValuePattern[T](typeName: String) extends Pattern[T] {
+  import JsonSchema._
 
-  sealed abstract class ValuePattern[T](typeName:String) extends Pattern[T] {
-    def validate(value: Option[Json], currentState: Option[Json], path: Path): Seq[ValidationFailure] =
-      value.collect {
-        case v if !extractor.isDefinedAt(v) =>
-          UnexpectedTypeFailure(path, this, v.getClass.getSimpleName)
-      }.toSeq
+  def validate(value: Option[Json], currentState: Option[Json], path: Path): Seq[ValidationFailure] =
+    (value, currentState) match {
+      case (None, None) =>
+        Seq(RequiredFailure(path))
+      case (Some(v), _) if !extractor.isDefinedAt(v) =>
+        Seq(UnexpectedTypeFailure(path, this, v.getClass.getSimpleName))
+      case _ =>
+        Nil
+    }
 
-    def schema: JObject = JObject(TYPE -> "string".j)
+  def schema: JObject = JObject(TYPE -> JString(typeName), REQUIRED -> JTrue)
+}
+
+
+trait JsonPatterns {
+
+  import JsonConstructor._
+  import JsonSchema._
+
+  implicit val boolean:Pattern[Boolean] = new RequiredValuePattern[Boolean]("boolean"){
+
+    protected def extractor = {
+      case JBool(j) => j
+    }
+    def apply(t: Boolean): Json =
+      JBool(t)
   }
 
-  implicit val string = new ValuePattern[String]("string"){
+  implicit val string:Pattern[String] = new RequiredValuePattern[String]("string") {
 
     protected def extractor = {
       case JString(j) => j
     }
+
     def apply(t: String): Json =
       JString(t)
   }
 
-  implicit val long = new ValuePattern[Long]("long") {
+  implicit val long:Pattern[Long] = new RequiredValuePattern[Long]("long") {
     protected def extractor = {
       case JLong(j) => j
       case JDouble(j) if j % 1 == 0 && j <= Long.MaxValue && j >= Long.MinValue => j.toLong
@@ -49,18 +69,18 @@ trait JsonPatterns {
     def apply(t: Long): Json =
       JLong(t)
   }
-  implicit val int = new ValuePattern[Int]("int") {
+  implicit val int:Pattern[Int] = new RequiredValuePattern[Int]("int") {
     protected def extractor = {
       case JLong(j) if j >= Int.MinValue && j <= Int.MaxValue =>
         j.toInt
-      case JDouble(j) if j >= Int.MinValue && j <= Int.MaxValue  && j % 1 == 0 =>
+      case JDouble(j) if j >= Int.MinValue && j <= Int.MaxValue && j % 1 == 0 =>
         j.toInt
     }
 
     def apply(t: Int): Json =
       JLong(t)
   }
-  implicit val double = new ValuePattern[Double]("double") {
+  implicit val double:Pattern[Double] = new RequiredValuePattern[Double]("double") {
     protected def extractor = {
       case JDouble(j) => j
       case JLong(j) => j
@@ -69,7 +89,7 @@ trait JsonPatterns {
     def apply(t: Double): Json =
       JDouble(t)
   }
-  implicit val float = new ValuePattern[Float]("float") {
+  implicit val float:Pattern[Float] = new RequiredValuePattern[Float]("float") {
     protected def extractor = {
       case JDouble(j) if j >= Float.MinValue && j <= Float.MaxValue => j.toFloat
       case JLong(j) => j
@@ -81,46 +101,71 @@ trait JsonPatterns {
 
   protected val uuidRegex = "([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})".r
 
-  implicit val uuid = new ValuePattern[UUID]("guid") {
-    override protected def extractor: PartialFunction[Json, UUID] = {
+  implicit val uuid:Pattern[UUID] = new RequiredValuePattern[UUID]("guid") {
+    protected def extractor: PartialFunction[Json, UUID] = {
       case JString(uuidRegex(v)) => UUID.fromString(v)
     }
 
-    override def apply(t: UUID): Json =
+    def apply(t: UUID): Json =
       JString(t.toString)
   }
 
-  implicit val json = new ValuePattern[Json]("json"){
+//  implicit val datetime:Pattern[DateTime] = new RequiredValuePattern[DateTime]("datetime") {
+//    protected def extractor: PartialFunction[Json, DateTime] = {
+//      case JString(StringUtil.jsonDate(v)) => new DateTime(v.toLong, DateTimeZone.UTC)
+//    }
+//
+//    def apply(t: DateTime): Json = JString(s"Date(${t.getMillis})")
+//  }
+
+  implicit val json:Pattern[Json] = new RequiredValuePattern[Json]("json"){
     protected def extractor = {
       case j => j
     }
     def apply(t:Json): Json = t
   }
 
-  implicit val jobj = new ValuePattern[JObject]("object"){
+  implicit val jMap:Pattern[JMap] = new RequiredValuePattern[JMap]("object"){
     protected def extractor = {
-      case j:JObject => j
+      case JObject(j) => j
     }
-    def apply(t:JObject): Json = t
+    def apply(t:JMap): Json = JObject(t)
+  }
+  implicit val jSeq:Pattern[Seq[Json]] = new RequiredValuePattern[Seq[Json]]("array"){
+    protected def extractor = {
+      case JArray(j) => j
+    }
+    def apply(t:Seq[Json]): Json = JArray(t)
   }
 
   implicit def seq[T](implicit pattern:Pattern[T]) = new Pattern[Seq[T]] {
     protected def extractor = {
       case JArray(j) => j.collect{ case pattern(e) => e}
     }
-
-    def validate(value: Option[Json], currentState: Option[Json], path: Path): Seq[ValidationFailure] =
-      value.toSeq.flatMap {
-        case JArray(v) =>
-          v.zipWithIndex.flatMap(e => pattern.validate(Some(e._1), None, path \ e._2))
-        case v =>
-          Some(UnexpectedTypeFailure(path, this, v.getClass.getSimpleName))
-      }
+//
+//    def validate(value: Option[Json], currentState: Option[Json], path: Path): Seq[ValidationFailure] =
+//      value.toSeq.flatMap {
+//        case JArray(v) =>
+//          v.zipWithIndex.flatMap(e => pattern.validate(Some(e._1), None, path \ e._2))
+//        case v =>
+//          Some(UnexpectedTypeFailure(path, this, v.getClass.getSimpleName))
+//      }
 
     def apply(t: Seq[T]): Json =
       JArray(t.map(pattern.apply))
 
     def schema: JObject = JObject(TYPE -> "array".j, ITEMS -> pattern.schema)
+  }
+
+  implicit def option[T](implicit pattern:Pattern[T]) = new Pattern[Option[T]] {
+    def schema: JObject = JObject(pattern.schema.value + (REQUIRED -> JFalse))
+
+    def apply(t: Option[T]): Json = t.fold[Json](JNull)(pattern.apply)
+
+    protected def extractor: PartialFunction[Json, Option[T]] = {
+      case JNull => None
+      case j => pattern.unapply(j)
+    }
   }
 
   implicit def tuple[T1,T2](implicit pattern1:Pattern[T1], pattern2:Pattern[T2]) = new Pattern[(T1, T2)] {
@@ -130,12 +175,6 @@ trait JsonPatterns {
 
     def apply(t: (T1, T2)): Json =
       JArray(Seq(pattern1(t._1), pattern2(t._2)))
-
-    def validate(value: Option[Json], currentState: Option[Json], path: Path): Seq[ValidationFailure] =
-      value.collect {
-        case v if !extractor.isDefinedAt(v) =>
-          UnexpectedTypeFailure(path, this, v.getClass.getSimpleName)
-      }.toSeq
 
     def schema: JObject =
       JObject(TYPE -> "array".j, ITEMS -> JArray(pattern1.schema, pattern2.schema))
@@ -152,12 +191,6 @@ trait JsonPatterns {
         case Left(t1) => pattern1.apply(t1)
         case Right(t2) => pattern2.apply(t2)
       }
-
-    def validate(value: Option[Json], currentState: Option[Json], path: Path): Seq[ValidationFailure] =
-      value.collect {
-        case v if !extractor.isDefinedAt(v) =>
-          UnexpectedTypeFailure(path, this, v.getClass.getSimpleName)
-      }.toSeq
 
     def schema: JObject = JObject(TYPE -> JArray(pattern1.schema, pattern2.schema))
   }

@@ -1,26 +1,65 @@
 package org.higherState.json
 
-trait Lens[T] {
-  def apply(obj:Json)(value:T):Json
-}
 
-object Lens {
+object JsonLens {
+  import JsonPath._
 
-  def getValue(target:Json, segments:Segments):Option[Json] =
-    (segments, target) match {
-      case (Vector(), _) =>
-        Some(target)
-      case (Left(head) +: tail, JObject(obj)) =>
-        obj.get(head).flatMap(getValue(_, tail))
-      case (Right(head) +: tail, JArray(array)) =>
-        if (head < array.size)
-          Some(array(head))
-        else
-          None
-      case _ => None
-    }
+  implicit class Set(val f: Json => Json) extends AnyVal {
+    def ~(f2: Json => Json): Json => Json =
+      (j: Json) => f2(f(j))
+  }
 
-  def setValue(target:Option[Json], segments:Segments, value:Json, insert:Boolean = false):Json =
+//  implicit class Unset[T](val f: T => Json => Json) extends AnyVal {
+//    def ~(f2: Json => Json): Json => Json =
+//      (j: Json) => f2(f(j))
+//  }
+
+  implicit class ValueLens[T](val prop: Property[T]) extends AnyVal {
+
+    def get(j:Json):Option[T] =
+      getValue(j, prop.path.segments).flatMap(prop.pattern.unapply)
+    def set =
+      (value:T) => (j:Json) => setValue(Some(j), prop.path.segments, prop.pattern(value))
+    def modify =
+      (func:T => T) => (j:Json) =>
+       get(j).fold[Json](j)(v => setValue(Some(j), prop.path.segments, prop.pattern(func(v))))
+    def maybeModify =
+      (func:Option[T] => T) => (j:Json) =>
+        setValue(Some(j), prop.path.segments, prop.pattern(func(get(j))))
+    def drop =
+      (j:Json) => dropValue(j, prop.path.segments)
+    def move =
+      (p:Property[T]) => (j:Json) => {
+        getValue(j, prop.path.segments) match {
+          case None =>
+            dropValue(j, prop.path.segments)
+          case Some(value) =>
+            val j2 = dropValue(j, prop.path.segments)
+            insertValue(Some(j2), p.path.segments, value)
+        }
+      }
+  }
+
+  implicit class ArrayLens[T](val prop: \:[T]) extends AnyVal {
+    def at(index:Int) = ArrayElement[T](index, prop.path)(prop.elementPattern)
+
+    def head = ArrayElement[T](0, prop.path)(prop.elementPattern)
+
+    def append =
+      (value:T) => (j:Json) => {
+        val current = getValue(j, prop.path.segments).flatMap(prop.seqPattern.unapply).getOrElse(Seq.empty)
+        setValue(Some(j), prop.path.segments, prop.seqPattern.apply(current :+ prop.elementPattern(value)))
+      }
+    def prepend =
+      (value:T) => (j:Json) => prop.seqPattern.apply(prop.elementPattern(value) +: prop.seqPattern.unapply(j).getOrElse(Seq.empty))
+  }
+  case class ArrayElement[T](index:Int, arrayPath:Path)(implicit val pattern:Pattern[T]) extends Property[T]  {
+    def key = index.toString
+    def validator: Validator[T] = EmptyValidator
+    def path = arrayPath \ index
+  }
+
+  protected def setValue(target:Option[Json], segments:Segments, value:Json, insert:Boolean = false):Json =
     (segments, target) match {
       case (Left(key) +: tail, Some(JObject(obj))) =>
         JObject(obj + (key -> setValue(obj.get(key), tail, value)))
@@ -38,7 +77,7 @@ object Lens {
         value
     }
 
-  def insertValue(target:Option[Json], segments:Segments, value:Json):Json =
+  protected def insertValue(target:Option[Json], segments:Segments, value:Json):Json =
     (segments, target) match {
       case (Left(key) +: tail, Some(JObject(obj))) =>
         JObject(obj + (key -> setValue(obj.get(key), tail, value)))
@@ -58,7 +97,7 @@ object Lens {
         value
     }
 
-  def dropValue(target:Json, segments:Segments):Json =
+  protected def dropValue(target:Json, segments:Segments):Json =
     (segments, target) match {
       case (Left(key) +: Vector(), JObject(obj)) =>
         JObject(obj - key)
@@ -73,12 +112,4 @@ object Lens {
       case _ =>
         target
     }
-
-
-}
-object Compositor {
-  implicit class F(val f: Json => Json) extends AnyVal {
-    def ~(f2: Json => Json): Json => Json =
-      (j: Json) => f2(f(j))
-  }
 }

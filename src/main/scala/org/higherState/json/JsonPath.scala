@@ -22,4 +22,18 @@ object JsonPath {
     def \(key:Int):Option[Json] =
       json.flatMap(_\key)
   }
+
+  def getValue(target:Json, segments:Segments):Option[Json] =
+    (segments, target) match {
+      case (Vector(), _) =>
+        Some(target)
+      case (Left(head) +: tail, JObject(obj)) =>
+        obj.get(head).flatMap(getValue(_, tail))
+      case (Right(head) +: tail, JArray(array)) =>
+        if (head < array.size)
+          Some(array(head))
+        else
+          None
+      case _ => None
+    }
 }
