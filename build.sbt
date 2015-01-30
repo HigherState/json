@@ -4,10 +4,10 @@ organization := "org.higherState"
 
 version := "0.1"
 
-scalaVersion := "2.11.4"
+scalaVersion := "2.11.5"
 
 libraryDependencies ++= Seq(
-  "org.scala-lang" % "scala-compiler" % "2.11.4",
+  "org.scala-lang" % "scala-compiler" % "2.11.5",
   "org.scalaz" %% "scalaz-core" % "7.0.6",
   "org.scalatest" % "scalatest_2.11" % "2.2.0" % "test",
   "joda-time" % "joda-time" % "2.1",

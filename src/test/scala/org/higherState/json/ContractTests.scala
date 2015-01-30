@@ -10,6 +10,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
   import DefaultPatterns._
   import JsonConstructor._
   import JsonValidation._
+  import JsonMatchers._
 
   trait Created extends SubContract {
     val user = \[String]("user", nonEmptyOrWhiteSpace)
@@ -24,8 +25,23 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
   object Document extends Contract {
     val id = \[UUID]("Id")
     val age = \[Long]("age", immutable && JsonValidation.>=(0) && JsonValidation.<=(100))
-    val default = \![Boolean]("default", false)
+    val default = \![Boolean]("default", false, notNull)
     val metadata = new \\("metadata") with Metadata
+    val phone = \?[Long]("phone", reserved && JsonValidation.>=(0))
+  }
+
+  object TypeTest extends ContractType("type", "Test") {
+    val id = \[UUID]("Id")
+  }
+
+  object KeyMatchTest extends ContractType("type") {
+    val id = \[UUID]("Id")
+  }
+
+  object Nested extends Contract {
+    val maybeObj = new \\?("maybeObj") {
+      val messages = \:?[Seq[Json]]("messages")
+    }
   }
 
   test("Contract extractor test") {
@@ -35,8 +51,8 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     document match {
       case Document.age(age) && Document.metadata.name(bob) && Document.default(default) =>
         println(age, bob, default)
-      case Document.age(age) =>
-        println(age)
+      case Document.age(age) && Document.phone(maybe) && Document.default(false) =>
+        println(age, maybe)
       case _ =>
         println("No match")
     }
@@ -44,6 +60,17 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
    println(Document.validate(document))
    println(Document.validate(document, JObject("Id" -> UUID.randomUUID().toString.j, "age" -> 223.j)))
 //    println(Document.schema)
+  }
+
+  test("Contract type test") {
+    import JsonLens._
+    val document = Map("Id" -> UUID.randomUUID().toString.j, "type" -> "Test".j).j
+    document match {
+      case TypeTest(_) && KeyMatchTest(_) =>
+        println("Matched")
+    }
+
+    println(TypeTest.create(_.id.set(UUID.randomUUID())))
   }
 
 
@@ -55,6 +82,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     val document = Map("Id" -> UUID.randomUUID().toString.j, "age" -> 123.j, "metadata" -> JObject()).j
     println(Document.metadata.name.set("John")(document))
     println(Document.age.modify(_ + 1)(document))
+    println(Document.phone.modify(_.map(_ + 2372321).orElse(Some(12323)))(document))
   }
 
 
@@ -62,19 +90,19 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
 
 
 
-  test("Composition of setters") {
-    import JsonLens._
-    val document = Map("Id" -> UUID.randomUUID().toString.j, "age" -> 123.j, "metadata" -> Map("name" -> "John".j).j).j
-
-    val modify = Document{d =>
-      d.age.modify(_ + 1) ~
-        d.metadata{m =>
-          m.name.move(m.created.user)
-        } ~
-        d.id.drop
-    }
-    println(modify(document))
-  }
+//  test("Composition of setters") {
+//    import JsonLens._
+//    val document = Map("Id" -> UUID.randomUUID().toString.j, "age" -> 123.j, "metadata" -> Map("name" -> "John".j).j).j
+//
+//    val modify = Document{d =>
+//      d.age.modify(_ + 1) ~
+//        d.metadata{m =>
+//          m.name.move(m.created.user)
+//        } ~
+//        d.id.drop
+//    }
+//    println(modify(document))
+//  }
 
 
 
@@ -110,12 +138,12 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
       "three" +: c
     }(c))
 
-    println(Collection.coll{ c =>
-      c.append("three") ~
-        c.at(0).modify(_ + "_") ~
-        c.at(6).set("six") ~
-        c.at(2).move(c.at(4))
-    }(c))
+//    println(Collection.coll{ c =>
+//      c.append("three") ~
+//        c.at(0).modify(_ + "_") ~
+//        c.at(6).set("six") ~
+//        c.at(2).move(c.at(4))
+//    }(c))
 
   }
 

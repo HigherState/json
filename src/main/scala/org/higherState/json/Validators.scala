@@ -4,10 +4,6 @@ import org.higherState.validation.{Valid, ValidationFailure}
 import scala.collection.GenTraversableOnce
 import scalaz.{NonEmptyList, Failure, Success}
 
-sealed trait DataState
-case object New extends DataState
-case object Delta extends DataState
-
 trait Validator[+T] {
 
   def validate(value:Option[Json], currentState:Option[Json], path:Path):Seq[ValidationFailure]
@@ -66,8 +62,8 @@ trait SimpleValidator[+T] extends Validator[T] {
 object JsonValidation {
   import JsonConstructor._
 
-  type Numeric = Long with Int with Float with Double
-  type Length = String with GenTraversableOnce[Any]
+  type Numeric = Long with Int with Float with Double with Option[Long] with Option[Int] with Option[Float] with Option[Double]
+  type Length = String with GenTraversableOnce[Any] with Option[String]
 
   implicit class BaseContractValidation(val contract:BaseContract) extends AnyVal {
     def validate(newContent:Json):Valid[Json] =
@@ -83,11 +79,11 @@ object JsonValidation {
       }
 
     def validate(value: Json, currentState: Option[Json], path:Path): Seq[ValidationFailure] =
-      contract.pattern.unapply(value).fold[Seq[ValidationFailure]](Seq(UnexpectedTypeFailure(path, contract.pattern, value.getClass.getSimpleName))) {j =>
-        val current = currentState.flatMap(contract.pattern.unapply)
-        contract.contractProperties.flatMap{p =>
-          p.validate(j.get(p.key), current.flatMap(_.get(p.key)), path \ p.key)
-        }
+      contract.contractProperties.flatMap{p =>
+        val segment = Vector(Left(p.key))
+        val v = JsonPath.getValue(value, segment)
+        val c = currentState.flatMap(JsonPath.getValue(_, segment))
+        p.validate(v, c, path \ p.key)
       }
 
   }
@@ -114,12 +110,20 @@ object JsonValidation {
     def schema: JObject = JObject("immutable" -> JTrue)
   }
 
-  val reserved = new SimpleValidator[Nothing]  {
+  val reserved = new SimpleValidator[Option[Nothing]]  {
     def maybeValid(path:Path) = {
       case (Some(_), _) =>
         ReservedFailure(path)
     }
     def schema: JObject = JObject("reserved" -> JTrue)
+  }
+
+  val notNull = new SimpleValidator[Option[Nothing]]  {
+    def maybeValid(path:Path) = {
+      case (Some(JNull), _) =>
+        NotNullFailure(path)
+    }
+    def schema: JObject = JObject("notNull" -> JTrue)
   }
 
   sealed trait BoundedValidator extends SimpleValidator[Numeric] {

@@ -35,6 +35,9 @@ abstract class RequiredValuePattern[T](typeName: String) extends Pattern[T] {
   def schema: JObject = JObject(TYPE -> JString(typeName), REQUIRED -> JTrue)
 }
 
+trait SeqExtractor[T] {
+  def unapply(s:Seq[Json]):Option[Seq[T]]
+}
 
 trait JsonPatterns {
 
@@ -125,6 +128,13 @@ trait JsonPatterns {
     def apply(t:Json): Json = t
   }
 
+  implicit val jObj:Pattern[JObject] = new RequiredValuePattern[JObject]("object"){
+    protected def extractor = {
+      case j:JObject => j
+    }
+    def apply(t:JObject): Json = t
+  }
+
   implicit val jMap:Pattern[JMap] = new RequiredValuePattern[JMap]("object"){
     protected def extractor = {
       case JObject(j) => j
@@ -138,18 +148,19 @@ trait JsonPatterns {
     def apply(t:Seq[Json]): Json = JArray(t)
   }
 
-  implicit def seq[T](implicit pattern:Pattern[T]) = new Pattern[Seq[T]] {
-    protected def extractor = {
-      case JArray(j) => j.collect{ case pattern(e) => e}
+  implicit def allExtracted[T](implicit pattern:Pattern[T]) = new SeqExtractor[T] {
+    def unapply(j:Seq[Json]):Option[Seq[T]] = {
+      val t = j.toIterator.map(pattern.unapply).takeWhile(_.isDefined).flatten.toSeq
+      if (t.size == j.size) Some(t)
+      else None
     }
-//
-//    def validate(value: Option[Json], currentState: Option[Json], path: Path): Seq[ValidationFailure] =
-//      value.toSeq.flatMap {
-//        case JArray(v) =>
-//          v.zipWithIndex.flatMap(e => pattern.validate(Some(e._1), None, path \ e._2))
-//        case v =>
-//          Some(UnexpectedTypeFailure(path, this, v.getClass.getSimpleName))
-//      }
+  }
+
+  //all or nothing extraction
+  implicit def seq[T](implicit sqlExtractor:SeqExtractor[T], pattern:Pattern[T]) = new Pattern[Seq[T]] {
+    protected def extractor = {
+      case JArray(sqlExtractor(j)) => j
+    }
 
     def apply(t: Seq[T]): Json =
       JArray(t.map(pattern.apply))
@@ -195,5 +206,6 @@ trait JsonPatterns {
     def schema: JObject = JObject(TYPE -> JArray(pattern1.schema, pattern2.schema))
   }
 }
+
 
 object DefaultPatterns extends JsonPatterns

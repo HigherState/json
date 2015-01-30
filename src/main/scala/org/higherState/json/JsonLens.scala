@@ -14,6 +14,8 @@ object JsonLens {
 //      (j: Json) => f2(f(j))
 //  }
 
+
+
   implicit class ValueLens[T](val prop: Property[T]) extends AnyVal {
 
     def get(j:Json):Option[T] =
@@ -26,18 +28,29 @@ object JsonLens {
     def maybeModify =
       (func:Option[T] => T) => (j:Json) =>
         setValue(Some(j), prop.path.segments, prop.pattern(func(get(j))))
-    def drop =
-      (j:Json) => dropValue(j, prop.path.segments)
-    def move =
+    def copy =
       (p:Property[T]) => (j:Json) => {
         getValue(j, prop.path.segments) match {
           case None =>
-            dropValue(j, prop.path.segments)
           case Some(value) =>
-            val j2 = dropValue(j, prop.path.segments)
-            insertValue(Some(j2), p.path.segments, value)
+            insertValue(Some(j), p.path.segments, value)
         }
       }
+  }
+
+  implicit class MaybeLens[T](val prop: Property[Option[T]]) extends AnyVal {
+    def drop =
+      (j:Json) => dropValue(j, prop.path.segments)
+//    def move =
+//      (p:Property[T]) => (j:Json) => {
+//        getValue(j, prop.path.segments) match {
+//          case None =>
+//            dropValue(j, prop.path.segments)
+//          case Some(value) =>
+//            val j2 = dropValue(j, prop.path.segments)
+//            insertValue(Some(j2), p.path.segments, value)
+//        }
+//      }
   }
 
   implicit class ArrayLens[T](val prop: \:[T]) extends AnyVal {
