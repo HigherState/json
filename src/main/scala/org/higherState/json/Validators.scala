@@ -21,6 +21,7 @@ case class RequiredFailure(path:Path) extends ValidationFailure
 case class BoundFailure(path:Path, message:String) extends ValidationFailure
 case class NotNullFailure(path:Path) extends ValidationFailure
 case class ReservedFailure(path:Path) extends ValidationFailure
+case class InvalidValueFailure(path:Path, value:Json) extends ValidationFailure
 
 case class AndValidator[T, A >: T, B >: T](left:Validator[A], right:Validator[B]) extends Validator[T] {
   def validate(value:Option[Json], currentState:Option[Json], path:Path):Seq[ValidationFailure] =
@@ -63,7 +64,8 @@ object JsonValidation {
   import JsonConstructor._
 
   type Numeric = Long with Int with Float with Double with Option[Long] with Option[Int] with Option[Float] with Option[Double]
-  type Length = String with GenTraversableOnce[Any] with Option[String]
+  type Length = String with Seq[Nothing]
+  type Optionable[T] = T with Option[T]
 
   implicit class BaseContractValidation(val contract:BaseContract) extends AnyVal {
     def validate(newContent:Json):Valid[Json] =
@@ -77,7 +79,7 @@ object JsonValidation {
         case Nil => Success(deltaContent)
         case failure +: failures => Failure(NonEmptyList(failure, failures:_*))
       }
-
+    //TODO better approach here
     def validate(value: Json, currentState: Option[Json], path:Path): Seq[ValidationFailure] =
       contract.contractProperties.flatMap{p =>
         val segment = Vector(Left(p.key))
@@ -85,7 +87,6 @@ object JsonValidation {
         val c = currentState.flatMap(JsonPath.getValue(_, segment))
         p.validate(v, c, path \ p.key)
       }
-
   }
 
   implicit class PropertyValidation[T](val prop:Property[T]) extends AnyVal {
@@ -110,6 +111,15 @@ object JsonValidation {
     def schema: JObject = JObject("immutable" -> JTrue)
   }
 
+  val notNull = new SimpleValidator[Option[Nothing]] {
+    def maybeValid(path: Path) = {
+      case (Some(JNull), _) =>
+        NotNullFailure(path)
+    }
+
+    def schema: JObject = JObject("notNull" -> JTrue)
+  }
+
   val reserved = new SimpleValidator[Option[Nothing]]  {
     def maybeValid(path:Path) = {
       case (Some(_), _) =>
@@ -118,19 +128,14 @@ object JsonValidation {
     def schema: JObject = JObject("reserved" -> JTrue)
   }
 
-  val notNull = new SimpleValidator[Option[Nothing]]  {
-    def maybeValid(path:Path) = {
-      case (Some(JNull), _) =>
-        NotNullFailure(path)
-    }
-    def schema: JObject = JObject("notNull" -> JTrue)
-  }
-
   sealed trait BoundedValidator extends SimpleValidator[Numeric] {
-    def doubleFail(n:Double):Boolean
-    def longFail(n:Long):Boolean
-    def message(n:Number):String
-    def maybeValid(path:Path) = {
+    def doubleFail(n: Double): Boolean
+
+    def longFail(n: Long): Boolean
+
+    def message(n: Number): String
+
+    def maybeValid(path: Path) = {
       case (Some(JDouble(n)), _) if doubleFail(n) =>
         BoundFailure(path, message(n))
       case (Some(JLong(n)), _) if longFail(n) =>
@@ -138,74 +143,108 @@ object JsonValidation {
     }
   }
 
-  def >(value:Long):Validator[Numeric] = new BoundedValidator {
-    def doubleFail(n:Double):Boolean = n <= value
-    def longFail(n:Long):Boolean = n <= value
-    def message(n:Number):String = s"Value $n is not greater than $value"
-    def schema: JObject = JObject("greaterThan" -> value.j)
-  }
-  def >(value:Double):Validator[Numeric] = new BoundedValidator {
-    def doubleFail(n:Double):Boolean = n <= value
-    def longFail(n:Long):Boolean = n <= value
-    def message(n:Number):String = s"Value $n is not greater than $value"
+  def >[T](value: Long) = new BoundedValidator {
+    def doubleFail(n: Double): Boolean = n <= value
+
+    def longFail(n: Long): Boolean = n <= value
+
+    def message(n: Number): String = s"Value $n is not greater than $value"
+
     def schema: JObject = JObject("greaterThan" -> value.j)
   }
 
-  def >=(value:Long):Validator[Numeric] = new BoundedValidator {
-    def doubleFail(n:Double):Boolean = n < value
-    def longFail(n:Long):Boolean = n < value
-    def message(n:Number):String = s"Value $n is not greater than or equal to $value"
+  def >[T](value: Double):Validator[Numeric] = new BoundedValidator {
+    def doubleFail(n: Double): Boolean = n <= value
+
+    def longFail(n: Long): Boolean = n <= value
+
+    def message(n: Number): String = s"Value $n is not greater than $value"
+
+    def schema: JObject = JObject("greaterThan" -> value.j)
+  }
+
+  def >=[T](value: Long):Validator[Numeric] = new BoundedValidator {
+    def doubleFail(n: Double): Boolean = n < value
+
+    def longFail(n: Long): Boolean = n < value
+
+    def message(n: Number): String = s"Value $n is not greater than or equal to $value"
+
     def schema: JObject = JObject("greaterThanEquals" -> value.j)
   }
-  def >=(value:Double):Validator[Numeric] = new BoundedValidator {
-    def doubleFail(n:Double):Boolean = n < value
-    def longFail(n:Long):Boolean = n < value
-    def message(n:Number):String = s"Value $n is not greater than or equal to $value"
+
+  def >=[T](value: Double) = new BoundedValidator {
+    def doubleFail(n: Double): Boolean = n < value
+
+    def longFail(n: Long): Boolean = n < value
+
+    def message(n: Number): String = s"Value $n is not greater than or equal to $value"
+
     def schema: JObject = JObject("greaterThanEquals" -> value.j)
   }
 
-  def <(value:Long):Validator[Numeric] = new BoundedValidator {
-    def doubleFail(n:Double):Boolean = n >= value
-    def longFail(n:Long):Boolean = n >= value
-    def message(n:Number):String = s"Value $n is not less than $value"
-    def schema: JObject = JObject("lessThan" -> value.j)
-  }
-  def <(value:Double):Validator[Numeric] = new BoundedValidator {
-    def doubleFail(n:Double):Boolean = n <= value
-    def longFail(n:Long):Boolean = n <= value
-    def message(n:Number):String = s"Value $n is not less than $value"
+  def <[T](value: Long) = new BoundedValidator {
+    def doubleFail(n: Double): Boolean = n >= value
+
+    def longFail(n: Long): Boolean = n >= value
+
+    def message(n: Number): String = s"Value $n is not less than $value"
+
     def schema: JObject = JObject("lessThan" -> value.j)
   }
 
-  def <=(value:Long):Validator[Numeric] = new BoundedValidator {
-    def doubleFail(n:Double):Boolean = n > value
-    def longFail(n:Long):Boolean = n > value
-    def message(n:Number):String = s"Value $n is not less than or equal to $value"
-    def schema: JObject = JObject("lessThanEquals" -> value.j)
+  def <[T](value: Double) = new BoundedValidator {
+    def doubleFail(n: Double): Boolean = n <= value
+
+    def longFail(n: Long): Boolean = n <= value
+
+    def message(n: Number): String = s"Value $n is not less than $value"
+
+    def schema: JObject = JObject("lessThan" -> value.j)
   }
-  def <=(value:Double):Validator[Numeric] = new BoundedValidator {
-    def doubleFail(n:Double):Boolean = n > value
-    def longFail(n:Long):Boolean = n > value
-    def message(n:Number):String = s"Value $n is not greater than or equal to $value"
+
+  def <=[T](value: Long) = new BoundedValidator {
+    def doubleFail(n: Double): Boolean = n > value
+
+    def longFail(n: Long): Boolean = n > value
+
+    def message(n: Number): String = s"Value $n is not less than or equal to $value"
+
     def schema: JObject = JObject("lessThanEquals" -> value.j)
   }
 
-  def minLength(value:Int):Validator[Length] = new SimpleValidator[Length] {
+  def <=[T](value: Double) = new BoundedValidator {
+    def doubleFail(n: Double): Boolean = n > value
+
+    def longFail(n: Long): Boolean = n > value
+
+    def message(n: Number): String = s"Value $n is not greater than or equal to $value"
+
+    def schema: JObject = JObject("lessThanEquals" -> value.j)
+  }
+
+  def in[T](values:T*)(implicit pattern:Pattern[T]) = new SimpleValidator[Optionable[T]] {
+    def schema: JObject = JObject("isIn" -> JArray(values.map(pattern.apply)))
+
+    def maybeValid(path: Path): PartialFunction[(Option[Json], Option[Json]), ValidationFailure] = {
+      case (Some(pattern(j)), _) if !values.contains(j) =>
+        InvalidValueFailure(path, pattern(j))
+    }
+  }
+
+  def minLength(value: Int) = new SimpleValidator[Optionable[Length]] {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.length < value =>
         BoundFailure(path, s"Array must have length of at least $value")
-      case (Some(JString(text)), _) if text.length < value =>
-        BoundFailure(path, s"String must have length of at least $value")
     }
+
     def schema: JObject = JObject("minLength" -> value.j)
   }
 
-  def nonEmpty:Validator[Length] = new SimpleValidator[Length] {
+  def nonEmpty = new SimpleValidator[Optionable[Length]] {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.isEmpty =>
         BoundFailure(path, s"Array must not be empty")
-      case (Some(JString(text)), _) if text.isEmpty =>
-        BoundFailure(path, s"Text must not be empty")
     }
 
     def schema: JObject = JObject("nonEmpty" -> JTrue)
@@ -220,16 +259,30 @@ object JsonValidation {
     def schema: JObject = JObject("nonEmptyOrWhitespace" -> JTrue)
   }
 
-  def forall[T](validator:Validator[T]) = new Validator[GenTraversableOnce[T]] {
+  def forall[T](validator: Validator[T]) = new Validator[Optionable[Seq[Nothing]]] {
     def validate(value: Option[Json], currentState: Option[Json], pathContext: Path): Seq[ValidationFailure] =
       value collect {
         case JArray(seq) =>
           for {
-            (e,i) <- seq.zipWithIndex
+            (e, i) <- seq.zipWithIndex
             v <- validator.validate(Some(e), None, pathContext \ i)
           } yield v
       } getOrElse Seq.empty
 
     def schema = JObject("items" -> validator.schema)
+  }
+
+  //TODO Forall doesnt validate agains current state, bit of an odd one..
+  def forall(contract: BaseContract) = new Validator[Optionable[Seq[Nothing]]] {
+    def validate(value: Option[Json], currentState: Option[Json], pathContext: Path): Seq[ValidationFailure] =
+      value collect {
+        case JArray(seq) =>
+          for {
+            (e, i) <- seq.zipWithIndex
+            v <- BaseContractValidation(contract).validate(e, None, pathContext \ i)
+          } yield v
+      } getOrElse Seq.empty
+
+    def schema = JObject.empty //("items" -> contract.schema)
   }
 }
