@@ -241,7 +241,7 @@ object JsonValidation {
     def schema: JObject = JObject("minLength" -> value.j)
   }
 
-  def nonEmpty = new SimpleValidator[Optionable[Length]] {
+  val nonEmpty = new SimpleValidator[Optionable[Length]] {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.isEmpty =>
         BoundFailure(path, s"Array must not be empty")
@@ -250,7 +250,7 @@ object JsonValidation {
     def schema: JObject = JObject("nonEmpty" -> JTrue)
   }
 
-  def nonEmptyOrWhiteSpace:Validator[String] = new SimpleValidator[Length] {
+  val nonEmptyOrWhiteSpace:Validator[String] = new SimpleValidator[Length] {
     def maybeValid(path: Path) = {
       case (Some(JString(text)), _) if text.trim().isEmpty =>
         BoundFailure(path, s"Text must not be all empty or whitespace")
