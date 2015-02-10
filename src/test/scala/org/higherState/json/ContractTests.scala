@@ -118,7 +118,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
   test("Collection") {
     import JsonLens._
 
-    val c = JObject("coll" -> Seq("one".j, "two".j, 2.j).j,
+    val c = JObject("coll" -> Seq("one".j, "two".j, "three".j).j,
       "tupl" -> JArray(4.j, "four".j),
       "obj" -> JArray(Map("Id" -> UUID.randomUUID().toString.j).j))
 

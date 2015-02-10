@@ -8,15 +8,15 @@ trait SelfApply {
 }
 
 trait BaseContract extends SelfApply {
-  implicit protected def path:Path
- // def pattern:Pattern[T]
+  implicit protected def path: Path
 
-  lazy val contractProperties:Seq[Property[_]] = {
-    val r = cm.reflect(this)
-    val t = ru.appliedType(r.symbol.asType.toType)
+  lazy val contractProperties: Seq[Property[_]] = {
+    val mirror = ru.runtimeMirror(this.getClass.getClassLoader)
+    val r = mirror.reflect(this)
+    val t = ru.appliedType(r.symbol.asType.toType, Nil)
     val propertyErasure = typeOf[Property[_]].erasure
-    t.members.collect{ case m:MethodSymbol if m.isPublic && m.returnType <:< propertyErasure  && !m.isConstructor =>
-      r.reflectMethod(m)().asInstanceOf[Property[_]]// reflectField doesnt work oddly
+    t.members.collect { case m: MethodSymbol if m.isPublic && m.returnType.erasure == propertyErasure && !m.isConstructor =>
+      r.reflectMethod(m)().asInstanceOf[Property[_]] // reflectField doesnt work oddly
     }.toSeq
   }
 }
@@ -55,7 +55,6 @@ object JsonMatchers {
     def isMatch(j: Json): Boolean = j == default
   }
 }
-
 
 trait SubContract {
   implicit protected def path:Path
@@ -104,9 +103,9 @@ case class \?[T](key:String, validator:Validator[Option[T]] = EmptyValidator)(im
 
 case class \![T](key:String, default:T, validator:Validator[Option[T]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Option[T]]) extends Default[T](key, default)(parentPath, pattern)
 
-abstract class \\(val key:String, val validator:Validator[JMap] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[JMap]) extends Expected[JMap](key)(parentPath, pattern) with BaseContract
+abstract class \\(val key:String, val validator:Validator[JObject] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[JObject]) extends Expected[JObject](key)(parentPath, pattern) with BaseContract
 
-abstract class \\?(val key:String, val validator:Validator[Option[JMap]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Option[JMap]]) extends Maybe[JMap](key)(parentPath, pattern) with BaseContract
+abstract class \\?(val key:String, val validator:Validator[Option[JObject]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Option[JObject]]) extends Maybe[JObject](key)(parentPath, pattern) with BaseContract
 
 case class \:[T](key:String, validator:Validator[Seq[T]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Seq[T]], val seqPattern:Pattern[Seq[Json]], val elementPattern:Pattern[T]) extends Expected[Seq[T]](key)(parentPath, pattern)
 
