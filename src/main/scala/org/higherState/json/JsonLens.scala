@@ -59,12 +59,30 @@ object JsonLens {
     def head = ArrayElement[T](0, prop.path)(prop.elementPattern)
 
     def append =
-      (value:T) => (j:Json) => {
-        val current = getValue(j, prop.path.segments).flatMap(prop.seqPattern.unapply).getOrElse(Seq.empty)
-        setValue(Some(j), prop.path.segments, prop.seqPattern.apply(current :+ prop.elementPattern(value)))
-      }
+      (value:T) => (j:Json) =>
+        setValue(Some(j), prop.path.segments, prop.seqPattern.apply(current(j) :+ prop.elementPattern(value)))
+
     def prepend =
-      (value:T) => (j:Json) => prop.seqPattern.apply(prop.elementPattern(value) +: prop.seqPattern.unapply(j).getOrElse(Seq.empty))
+      (value:T) => (j:Json) =>
+        prop.seqPattern.apply(prop.elementPattern(value) +: current(j))
+
+    protected def current(j:Json) = getValue(j, prop.path.segments).flatMap(prop.seqPattern.unapply).getOrElse(Seq.empty)
+  }
+
+  implicit class MaybeArrayLens[T](val prop: \:?[T]) extends AnyVal {
+    def at(index:Int) = ArrayElement[T](index, prop.path)(prop.elementPattern)
+
+    def head = ArrayElement[T](0, prop.path)(prop.elementPattern)
+
+    def append =
+      (value:T) => (j:Json) =>
+        setValue(Some(j), prop.path.segments, prop.seqPattern.apply(current(j) :+ prop.elementPattern(value)))
+
+    def prepend =
+      (value:T) => (j:Json) =>
+        prop.seqPattern.apply(prop.elementPattern(value) +: current(j))
+
+    protected def current(j:Json) = getValue(j, prop.path.segments).flatMap(prop.seqPattern.unapply).getOrElse(Seq.empty)
   }
   case class ArrayElement[T](index:Int, arrayPath:Path)(implicit val pattern:Pattern[T]) extends Property[T]  {
     def key = index.toString
