@@ -4,17 +4,10 @@ package org.higherState.json
 object JsonLens {
   import JsonPath._
 
-  implicit class Set(val f: Json => Json) extends AnyVal {
+  implicit class LensCombinator(val f: Json => Json) extends AnyVal {
     def ~(f2: Json => Json): Json => Json =
       (j: Json) => f2(f(j))
   }
-
-//  implicit class Unset[T](val f: T => Json => Json) extends AnyVal {
-//    def ~(f2: Json => Json): Json => Json =
-//      (j: Json) => f2(f(j))
-//  }
-
-
 
   implicit class ValueLens[T](val prop: Property[T]) extends AnyVal {
 
