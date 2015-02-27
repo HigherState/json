@@ -15,7 +15,7 @@ trait BaseContract extends SelfApply {
     val r = mirror.reflect(this)
     val t = ru.appliedType(r.symbol.asType.toType, Nil)
     val propertyErasure = typeOf[Property[_]].erasure
-    t.members.collect { case m: MethodSymbol if m.isPublic && m.returnType.erasure == propertyErasure && !m.isConstructor =>
+    t.members.collect { case m: MethodSymbol if m.returnType.erasure <:< propertyErasure && !m.isConstructor =>
       r.reflectMethod(m)().asInstanceOf[Property[_]] // reflectField doesnt work oddly
     }.toSeq
   }
