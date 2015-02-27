@@ -1,7 +1,5 @@
 package org.higherState.json
 
-import org.higherState.validation.{Valid, ValidationFailure}
-import scala.collection.GenTraversableOnce
 import scalaz.{NonEmptyList, Failure, Success}
 
 trait Validator[+T] {
@@ -14,14 +12,6 @@ trait Validator[+T] {
 
   def schema:JObject
 }
-
-case class UnexpectedTypeFailure(path:Path, pattern:Pattern[_], foundType:String) extends ValidationFailure
-case class ImmutableFailure(path:Path) extends ValidationFailure
-case class RequiredFailure(path:Path) extends ValidationFailure
-case class BoundFailure(path:Path, message:String) extends ValidationFailure
-case class NotNullFailure(path:Path) extends ValidationFailure
-case class ReservedFailure(path:Path) extends ValidationFailure
-case class InvalidValueFailure(path:Path, value:Json) extends ValidationFailure
 
 case class AndValidator[T, A >: T, B >: T](left:Validator[A], right:Validator[B]) extends Validator[T] {
   def validate(value:Option[Json], currentState:Option[Json], path:Path):Seq[ValidationFailure] =
@@ -68,13 +58,13 @@ object JsonValidation {
   type Optionable[T] = T with Option[T]
 
   implicit class BaseContractValidation(val contract:BaseContract) extends AnyVal {
-    def validate(newContent:Json):Valid[Json] =
+    def validate(newContent:Json):JValid =
       validate(newContent, None, Path.empty) match {
         case Nil => Success(newContent)
         case failure +: failures => Failure(NonEmptyList(failure, failures:_*))
       }
 
-    def validate(deltaContent:Json, currentState:Json):Valid[Json] =
+    def validate(deltaContent:Json, currentState:Json):JValid =
       validate(deltaContent, Some(currentState), Path.empty) match {
         case Nil => Success(deltaContent)
         case failure +: failures => Failure(NonEmptyList(failure, failures:_*))
@@ -82,10 +72,9 @@ object JsonValidation {
     //TODO better approach here
     def validate(value: Json, currentState: Option[Json], path:Path): Seq[ValidationFailure] =
       contract.contractProperties.flatMap{p =>
-        val segment = Vector(Left(p.key))
-        val v = JsonPath.getValue(value, segment)
-        val c = currentState.flatMap(JsonPath.getValue(_, segment))
-        p.validate(v, c, path \ p.key)
+        val v = JsonPath.getValue(value, p.relativePath.segments)
+        val c = currentState.flatMap(JsonPath.getValue(_, p.relativePath.segments))
+        p.validate(v, c, path ++ p.relativePath)
       }
   }
 
@@ -93,9 +82,9 @@ object JsonValidation {
     def validate(value: Option[Json], currentState: Option[Json], path:Path): Seq[ValidationFailure] =
       ((value, currentState, prop) match {
         case (None, None, p: Expected[_]) =>
-          Seq(RequiredFailure(path))
+          Seq("Value required." -> path)
         case (Some(v), c, _) if prop.pattern.unapply(v).isEmpty =>
-          Seq(UnexpectedTypeFailure(path, prop.pattern, v.getClass.getSimpleName))
+          Seq(s"Unexpected type '${v.getClass.getSimpleName}'." -> path)
         case (Some(v), c, b:BaseContract) =>
           new BaseContractValidation(b).validate(v, c, path)
         case _ =>
@@ -106,7 +95,7 @@ object JsonValidation {
   val immutable = new SimpleValidator[Nothing] {
     def maybeValid(path:Path) = {
       case (Some(a), Some(b)) if a != b =>
-        ImmutableFailure(path)
+        "value is immutable and cannot be changed." -> path
     }
     def schema: JObject = JObject("immutable" -> JTrue)
   }
@@ -114,7 +103,7 @@ object JsonValidation {
   val notNull = new SimpleValidator[Option[Nothing]] {
     def maybeValid(path: Path) = {
       case (Some(JNull), _) =>
-        NotNullFailure(path)
+        "Value cannot be null." -> path
     }
 
     def schema: JObject = JObject("notNull" -> JTrue)
@@ -123,7 +112,7 @@ object JsonValidation {
   val reserved = new SimpleValidator[Option[Nothing]]  {
     def maybeValid(path:Path) = {
       case (Some(_), _) =>
-        ReservedFailure(path)
+        "Value is reserved and cannot be provided." -> path
     }
     def schema: JObject = JObject("reserved" -> JTrue)
   }
@@ -137,9 +126,9 @@ object JsonValidation {
 
     def maybeValid(path: Path) = {
       case (Some(JDouble(n)), _) if doubleFail(n) =>
-        BoundFailure(path, message(n))
+        message(n) -> path
       case (Some(JLong(n)), _) if longFail(n) =>
-        BoundFailure(path, message(n))
+        message(n) -> path
     }
   }
 
@@ -228,14 +217,14 @@ object JsonValidation {
 
     def maybeValid(path: Path): PartialFunction[(Option[Json], Option[Json]), ValidationFailure] = {
       case (Some(pattern(j)), _) if !values.contains(j) =>
-        InvalidValueFailure(path, pattern(j))
+        s"Unexpected type '${j.getClass.getSimpleName}'." -> path
     }
   }
 
   def minLength(value: Int) = new SimpleValidator[Optionable[Length]] {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.length < value =>
-        BoundFailure(path, s"Array must have length of at least $value")
+        s"Array must have length of at least $value" -> path
     }
 
     def schema: JObject = JObject("minLength" -> value.j)
@@ -244,7 +233,7 @@ object JsonValidation {
   val nonEmpty = new SimpleValidator[Optionable[Length]] {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.isEmpty =>
-        BoundFailure(path, s"Array must not be empty")
+        s"Array must not be empty" -> path
     }
 
     def schema: JObject = JObject("nonEmpty" -> JTrue)
@@ -253,7 +242,7 @@ object JsonValidation {
   val nonEmptyOrWhiteSpace:Validator[String] = new SimpleValidator[Length] {
     def maybeValid(path: Path) = {
       case (Some(JString(text)), _) if text.trim().isEmpty =>
-        BoundFailure(path, s"Text must not be all empty or whitespace")
+        s"Text must not be all empty or whitespace" -> path
     }
 
     def schema: JObject = JObject("nonEmptyOrWhitespace" -> JTrue)

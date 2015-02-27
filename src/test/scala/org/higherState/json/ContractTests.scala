@@ -62,6 +62,10 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
 //    println(Document.schema)
   }
 
+  test("Validate") {
+    println(Document.validate(Map("Id" -> "hi".j).j))
+  }
+
   test("Contract type test") {
     import JsonLens._
     val document = Map("Id" -> UUID.randomUUID().toString.j, "type" -> "Test".j).j
@@ -73,7 +77,10 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     println(TypeTest.create(_.id.set(UUID.randomUUID())))
   }
 
-
+  test("test path") {
+    Path.fromString("hi") should be (Path("hi"))
+    Path.fromString("one\\two\\3\\four") should be (Path("one", "two", 3, "four"))
+  }
 
 
 

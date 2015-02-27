@@ -14,6 +14,8 @@ object JsonPath {
           Some(array.value(key))
         case _ => None
       }
+    def \(path:Path):Option[Json] =
+      getValue(json, path.segments)
   }
 
   implicit class JMaybePath(val json:Option[Json]) extends AnyVal {
@@ -21,6 +23,8 @@ object JsonPath {
       json.flatMap(_\key)
     def \(key:Int):Option[Json] =
       json.flatMap(_\key)
+    def \(path:Path):Option[Json] =
+      json.flatMap(_\path)
   }
 
   def getValue(target:Json, segments:Segments):Option[Json] =

@@ -1,14 +1,14 @@
 package org.higherState.json
 
 import reflect.runtime.universe._
-import scala.reflect.runtime.{currentMirror=>cm,universe=>ru}
+import scala.reflect.runtime.{universe=>ru}
 
 trait SelfApply {
   def apply[R](f:this.type => R):R = f(this)
 }
 
 trait BaseContract extends SelfApply {
-  implicit protected def path: Path
+  implicit protected def absolutePath:Path
 
   lazy val contractProperties: Seq[Property[_]] = {
     val mirror = ru.runtimeMirror(this.getClass.getClassLoader)
@@ -22,7 +22,7 @@ trait BaseContract extends SelfApply {
 }
 
 abstract class Contract(implicit pattern:Pattern[JObject]) extends BaseContract {
-  implicit protected def path:Path = Path.empty
+  implicit protected def absolutePath:Path = Path.empty
 
   def unapply(j:Json):Option[JObject] =
     pattern.unapply(j)
@@ -31,7 +31,7 @@ abstract class Contract(implicit pattern:Pattern[JObject]) extends BaseContract 
 }
 
 abstract class ContractType(key:String, matcher:Matcher = DefaultMatcher)(implicit pattern:Pattern[JObject]) extends BaseContract {
-  implicit protected def path: Path = Path.empty
+  implicit protected def absolutePath: Path = Path.empty
   def unapply(j:Json):Option[JObject] =
     pattern.unapply(j).filter(_.value.get(key).exists(matcher.isMatch))
 
@@ -57,56 +57,66 @@ object JsonMatchers {
 }
 
 trait SubContract {
-  implicit protected def path:Path
+  implicit protected def absolutePath:Path
 }
 
 trait Property[T <: Any] extends SelfApply {
   def pattern:Pattern[T]
-  def path:Path
-  def key:String
+  def absolutePath:Path
+  def relativePath:Path
   def validator:Validator[T]
 }
 
-abstract class Expected[T](key:String)(implicit parentPath:Path, val pattern:Pattern[T]) extends Property[T] {
+class Expected[T](val relativePath:Path, implicit val absolutePath:Path, val validator:Validator[T])(implicit val pattern:Pattern[T]) extends Property[T] {
   import JsonPath._
-  implicit val path:Path = parentPath \ key
 
   def unapply(j:Json):Option[T] =
-    getValue(j, path.segments).flatMap(pattern.unapply)
+    getValue(j, absolutePath.segments).flatMap(pattern.unapply)
 }
 
-abstract class Maybe[T](key:String)(implicit parentPath:Path, val pattern:Pattern[Option[T]]) extends Property[Option[T]] {
+class Maybe[T](val relativePath:Path, implicit val absolutePath:Path, val validator:Validator[Option[T]])(implicit val pattern:Pattern[Option[T]]) extends Property[Option[T]] {
   import JsonPath._
-  implicit val path:Path = parentPath \ key
 
   def unapply(j:Json):Option[Option[T]] =
-    getValue(j, path.segments).fold[Option[Option[T]]](Some(None)) { v =>
+    getValue(j, absolutePath.segments).fold[Option[Option[T]]](Some(None)) { v =>
       pattern.unapply(v) //always returns Some()
     }
 
 }
 
-abstract class Default[T](key:String, default:T)(implicit parentPath:Path, val pattern:Pattern[Option[T]]) extends Property[Option[T]] {
+class Default[T](val relativePath:Path, implicit val absolutePath:Path, default:T, val validator:Validator[Option[T]])(implicit val pattern:Pattern[Option[T]]) extends Property[Option[T]] {
   import JsonPath._
 
-  implicit val path:Path = parentPath \ key
-
   def unapply(j:Json):Option[T] =
-    getValue(j, path.segments).fold[Option[T]](Some(default)) { v =>
+    getValue(j, absolutePath.segments).fold[Option[T]](Some(default)) { v =>
       pattern.unapply(v).map(_.getOrElse(default)) //always returns Some()
     }
 }
 
-case class \[T](key:String, validator:Validator[T] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[T]) extends Expected[T](key)(parentPath, pattern)
+object \ {
+  def apply[T](path:Path, validator:Validator[T] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[T]) =
+    new Expected[T](path, parentPath ++ path, validator)(pattern)
+}
 
-case class \?[T](key:String, validator:Validator[Option[T]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Option[T]]) extends Maybe[T](key)(parentPath, pattern)
+object \? {
 
-case class \![T](key:String, default:T, validator:Validator[Option[T]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Option[T]]) extends Default[T](key, default)(parentPath, pattern)
+  def apply[T](path:Path, validator:Validator[Option[T]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Option[T]]) =
+    new Maybe[T](path, parentPath ++ path, validator)(pattern)
+}
 
-abstract class \\(val key:String, val validator:Validator[JObject] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[JObject]) extends Expected[JObject](key)(parentPath, pattern) with BaseContract
+object \! {
+  def apply[T](path:Path, default:T, validator:Validator[Option[T]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Option[T]]) =
+    new Default[T](path, parentPath ++ path, default, validator)(pattern)
+}
 
-abstract class \\?(val key:String, val validator:Validator[Option[JObject]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Option[JObject]]) extends Maybe[JObject](key)(parentPath, pattern) with BaseContract
+abstract class \\(path:Path, validator:Validator[JObject] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[JObject])
+  extends Expected[JObject](path, parentPath ++ path, validator)(pattern) with BaseContract
 
-case class \:[T](key:String, validator:Validator[Seq[T]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Seq[T]], val seqPattern:Pattern[Seq[Json]], val elementPattern:Pattern[T]) extends Expected[Seq[T]](key)(parentPath, pattern)
+abstract class \\?(path:Path, validator:Validator[Option[JObject]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Option[JObject]])
+  extends Maybe[JObject](path, parentPath ++ path, validator)(pattern) with BaseContract
 
-case class \:?[T](key:String, validator:Validator[Option[Seq[T]]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Option[Seq[T]]], val seqPattern:Pattern[Seq[Json]], val elementPattern:Pattern[T]) extends Maybe[Seq[T]](key)(parentPath, pattern)
+case class \:[T](path:Path, override val validator:Validator[Seq[T]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Seq[T]], val seqPattern:Pattern[Seq[Json]], val elementPattern:Pattern[T])
+  extends Expected[Seq[T]](path, parentPath ++ path, validator)(pattern)
+
+case class \:?[T](path:Path, override val validator:Validator[Option[Seq[T]]] = EmptyValidator)(implicit parentPath:Path, pattern:Pattern[Option[Seq[T]]], val seqPattern:Pattern[Seq[Json]], val elementPattern:Pattern[T])
+  extends Maybe[Seq[T]](path, parentPath ++ path, validator)(pattern)

@@ -1,6 +1,7 @@
 package org.higherState.json
 
-sealed trait Json extends Any
+sealed trait Json extends Any {
+}
 
 trait JNull extends Json{
   def value = null

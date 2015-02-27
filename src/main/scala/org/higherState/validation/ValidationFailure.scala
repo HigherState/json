@@ -1,3 +1,0 @@
-package org.higherState.validation
-
-trait ValidationFailure

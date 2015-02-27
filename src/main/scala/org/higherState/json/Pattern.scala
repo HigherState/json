@@ -2,7 +2,6 @@ package org.higherState.json
 
 import java.util.UUID
 
-import org.higherState.validation.ValidationFailure
 
 trait Pattern[T] {
   protected def extractor:PartialFunction[Json, T]
@@ -25,9 +24,9 @@ abstract class RequiredValuePattern[T](typeName: String) extends Pattern[T] {
   def validate(value: Option[Json], currentState: Option[Json], path: Path): Seq[ValidationFailure] =
     (value, currentState) match {
       case (None, None) =>
-        Seq(RequiredFailure(path))
+        Seq("Value expected." -> path)
       case (Some(v), _) if !extractor.isDefinedAt(v) =>
-        Seq(UnexpectedTypeFailure(path, this, v.getClass.getSimpleName))
+        Seq(s"Unexpected type '${v.getClass.getSimpleName}'." -> path)
       case _ =>
         Nil
     }
