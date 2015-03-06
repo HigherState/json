@@ -27,7 +27,9 @@ abstract class Contract(implicit pattern:Pattern[JObject]) extends BaseContract 
   def unapply(j:Json):Option[JObject] =
     pattern.unapply(j)
 
-  def create(f:this.type => Json => Json):Json = f(this)(JObject.empty)
+  def create(f:this.type => Json => Json):JObject =
+    f(this)(JObject.empty).asInstanceOf[JObject]
+
 }
 
 abstract class ContractType(key:String, matcher:Matcher = DefaultMatcher)(implicit pattern:Pattern[JObject]) extends BaseContract {
@@ -35,7 +37,8 @@ abstract class ContractType(key:String, matcher:Matcher = DefaultMatcher)(implic
   def unapply(j:Json):Option[JObject] =
     pattern.unapply(j).filter(_.value.get(key).exists(matcher.isMatch))
 
-  def create(f:this.type => Json => Json):Json = f(this)(JObject(Map(key -> matcher.default)))
+  def create(f:this.type => Json => Json):JObject =
+    f(this)(JObject(Map(key -> matcher.default))).asInstanceOf[JObject]
   def create() = JObject(Map(key -> matcher.default))
 }
 

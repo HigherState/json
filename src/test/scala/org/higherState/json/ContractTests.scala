@@ -45,6 +45,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
   }
 
   test("Contract extractor test") {
+    import JsonLens._
 
     val document = Map("Id" -> UUID.randomUUID().toString.j, "age" -> 123.j, "metadata" -> JObject.empty).j
 
@@ -57,9 +58,16 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
         println("No match")
     }
 
-   println(Document.validate(document))
-   println(Document.validate(document, JObject("Id" -> UUID.randomUUID().toString.j, "age" -> 223.j)))
+    println(Document.validate(document))
+    println(Document.validate(document, JObject("Id" -> UUID.randomUUID().toString.j, "age" -> 223.j)))
 //    println(Document.schema)
+
+    println(document.select(Document.age, Document.metadata.name))
+    println(document.exclude(Document.id))
+
+    println(document.append("temp" -> 1.j))
+
+    println(document.concat(JObject("temp" -> 1.j)))
   }
 
   test("Validate") {

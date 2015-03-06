@@ -1,6 +1,6 @@
 package org.higherState.json
 
-trait JsonFunctions {
+object JsonFunctions {
   /**
    * Concatenate and replace json structure with delta, where a JNull or Empty JObject value will clear the key value pair
    * @param delta
@@ -12,6 +12,60 @@ trait JsonFunctions {
         applyObjectDelta(t,d)
       case _ =>
         delta
+    }
+
+  def setValue(target:Option[Json], segments:Segments, value:Json, insert:Boolean = false):Json =
+    (segments, target) match {
+      case (Left(key) +: tail, Some(JObject(obj))) =>
+        JObject(obj + (key -> setValue(obj.get(key), tail, value)))
+      case (Left(key) +: tail, _) =>
+        JObject(key -> setValue(None, tail, value))
+      case (Right(index) +: tail, Some(JArray(array))) =>
+        val (left, right) = array.splitAt(index)
+        if (left.size < index)
+          JArray(left.padTo(index, JNull) :+ setValue(None, tail, value))
+        else
+          JArray((left :+ setValue(right.headOption, tail, value)) ++ right.tail)
+      case (Right(index) +: tail, _) =>
+        JArray(Seq.fill(index)(JNull) :+ setValue(None, tail, value))
+      case _ =>
+        value
+    }
+
+  def insertValue(target:Option[Json], segments:Segments, value:Json):Json =
+    (segments, target) match {
+      case (Left(key) +: tail, Some(JObject(obj))) =>
+        JObject(obj + (key -> setValue(obj.get(key), tail, value)))
+      case (Left(key) +: tail, _) =>
+        JObject(key -> setValue(None, tail, value))
+      case (Right(index) +: tail, Some(JArray(array))) =>
+        val (left, right) = array.splitAt(index)
+        if (left.size < index)
+          JArray(left.padTo(index, JNull) :+ setValue(None, tail, value))
+        else if (tail.isEmpty)
+          JArray((left :+ value) ++ right)
+        else
+          JArray((left :+ setValue(right.headOption, tail, value)) ++ right.tail)
+      case (Right(index) +: tail, _) =>
+        JArray(Seq.fill(index)(JNull) :+ setValue(None, tail, value))
+      case _ =>
+        value
+    }
+
+  def dropValue(target:Json, segments:Segments):Json =
+    (segments, target) match {
+      case (Left(key) +: Vector(), JObject(obj)) =>
+        JObject(obj - key)
+      case (Left(key) +: tail, JObject(obj)) =>
+        JObject(obj.get(key).fold(obj)(v => obj + (key -> dropValue(v, tail))))
+      case (Right(index) +: Vector(), JArray(seq)) if index < seq.length =>
+        val (left, right) = seq.splitAt(index)
+        JArray(left ++ right.drop(1))
+      case (Right(index) +: tail, JArray(seq)) if index < seq.length =>
+        val (left, right) = seq.splitAt(index)
+        JArray((left :+ dropValue(right.head, tail)) ++ right.drop(1))
+      case _ =>
+        target
     }
 
   private def applyObjectDelta(target:JObject, delta:JObject):JObject =

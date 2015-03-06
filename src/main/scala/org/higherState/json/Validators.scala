@@ -230,6 +230,15 @@ object JsonValidation {
     def schema: JObject = JObject("minLength" -> value.j)
   }
 
+  def maxLength(value: Int) = new SimpleValidator[Optionable[Length]] {
+    def maybeValid(path: Path) = {
+      case (Some(JArray(seq)), _) if seq.length > value =>
+        s"Array must have length of no greater than $value" -> path
+    }
+
+    def schema: JObject = JObject("maxLength" -> value.j)
+  }
+
   val nonEmpty = new SimpleValidator[Optionable[Length]] {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.isEmpty =>

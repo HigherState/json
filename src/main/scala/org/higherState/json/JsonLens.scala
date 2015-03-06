@@ -3,6 +3,7 @@ package org.higherState.json
 
 object JsonLens {
   import JsonPath._
+  import JsonFunctions._
 
   implicit class LensCombinator(val f: Json => Json) extends AnyVal {
     def ~(f2: Json => Json): Json => Json =
@@ -29,6 +30,34 @@ object JsonLens {
             insertValue(Some(j), p.absolutePath.segments, value)
         }
       }
+  }
+
+  implicit class JsonLens[T](val json:Json) extends AnyVal {
+    def select(properties:Property[_]*):Json = {
+      properties.foldLeft(JObject.empty.asInstanceOf[Json]) { (j, p) =>
+        getValue(json, p.absolutePath.segments).fold(j){v =>
+          setValue(Some(j), p.absolutePath.segments, v)
+        }
+      }
+    }
+    def exclude(properties:Property[_]*):Json = {
+      properties.foldLeft(json){ (j, p) =>
+        dropValue(j, p.absolutePath.segments)
+      }
+    }
+    def append(params:(String, Json)*):Json = json match {
+      case JObject(value) => JObject(value ++ params)
+      case _ => json
+    }
+    def concat(value:Json):Json = json -> value match {
+      case (JObject(c), JObject(d)) => JObject(c ++ d)
+      case (JArray(c), JArray(d)) => JArray(c ++ d)
+      case (JArray(c), d) => JArray(c :+ d)
+      case (c, d) => JArray(Seq(c, d))
+    }
+
+    def delta(delta:Json):Json =
+      applyDelta(json, delta)
   }
 
   implicit class MaybeLens[T](val prop: Property[Option[T]]) extends AnyVal {
@@ -84,57 +113,5 @@ object JsonLens {
     def absolutePath = arrayPath \ index
   }
 
-  protected def setValue(target:Option[Json], segments:Segments, value:Json, insert:Boolean = false):Json =
-    (segments, target) match {
-      case (Left(key) +: tail, Some(JObject(obj))) =>
-        JObject(obj + (key -> setValue(obj.get(key), tail, value)))
-      case (Left(key) +: tail, _) =>
-        JObject(key -> setValue(None, tail, value))
-      case (Right(index) +: tail, Some(JArray(array))) =>
-        val (left, right) = array.splitAt(index)
-        if (left.size < index)
-          JArray(left.padTo(index, JNull) :+ setValue(None, tail, value))
-        else
-          JArray((left :+ setValue(right.headOption, tail, value)) ++ right.tail)
-      case (Right(index) +: tail, _) =>
-        JArray(Seq.fill(index)(JNull) :+ setValue(None, tail, value))
-      case _ =>
-        value
-    }
 
-  protected def insertValue(target:Option[Json], segments:Segments, value:Json):Json =
-    (segments, target) match {
-      case (Left(key) +: tail, Some(JObject(obj))) =>
-        JObject(obj + (key -> setValue(obj.get(key), tail, value)))
-      case (Left(key) +: tail, _) =>
-        JObject(key -> setValue(None, tail, value))
-      case (Right(index) +: tail, Some(JArray(array))) =>
-        val (left, right) = array.splitAt(index)
-        if (left.size < index)
-          JArray(left.padTo(index, JNull) :+ setValue(None, tail, value))
-        else if (tail.isEmpty)
-          JArray((left :+ value) ++ right)
-        else
-          JArray((left :+ setValue(right.headOption, tail, value)) ++ right.tail)
-      case (Right(index) +: tail, _) =>
-        JArray(Seq.fill(index)(JNull) :+ setValue(None, tail, value))
-      case _ =>
-        value
-    }
-
-  protected def dropValue(target:Json, segments:Segments):Json =
-    (segments, target) match {
-      case (Left(key) +: Vector(), JObject(obj)) =>
-        JObject(obj - key)
-      case (Left(key) +: tail, JObject(obj)) =>
-        JObject(obj.get(key).fold(obj)(v => obj + (key -> dropValue(v, tail))))
-      case (Right(index) +: Vector(), JArray(seq)) if index < seq.length =>
-        val (left, right) = seq.splitAt(index)
-        JArray(left ++ right.drop(1))
-      case (Right(index) +: tail, JArray(seq)) if index < seq.length =>
-        val (left, right) = seq.splitAt(index)
-        JArray((left :+ dropValue(right.head, tail)) ++ right.drop(1))
-      case _ =>
-        target
-    }
 }
