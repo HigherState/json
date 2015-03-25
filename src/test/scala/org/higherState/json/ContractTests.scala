@@ -100,6 +100,16 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     println(Document.phone.modify(_.map(_ + 2372321).orElse(Some(12323)))(document))
   }
 
+  test("Query") {
+    import JsonQuery._
+    import JsonLens._
+    val q = Document.metadata{d => d.name.$eq("jamie") || d.name.$eq("pants")} && ((Document.age.$lt(35) && Document.age.$gt(12)) || Document.age.$exists(false))
+    println(q)
+    val match1 = Document.create(d => d.metadata.name.set("jamie") ~ d.age.set(24))
+    //val match2 = Document.create(d => d.)
+
+
+  }
 
 
 

@@ -1,6 +1,10 @@
 package org.higherState.json
 
 sealed trait Json extends Any {
+  def exists(pf:PartialFunction[Json, Boolean]):Boolean =
+    pf.lift(this).getOrElse(false)
+  def collect[T](pf:PartialFunction[Json, T]):Option[T] =
+    pf.lift(this)
 }
 
 trait JNull extends Json{
