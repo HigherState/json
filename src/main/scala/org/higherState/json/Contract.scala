@@ -11,13 +11,10 @@ trait BaseContract extends SelfApply {
   implicit protected def absolutePath:Path
 
   lazy val contractProperties: Seq[Property[_]] = {
-    val mirror = ru.runtimeMirror(this.getClass.getClassLoader)
-    val r = mirror.reflect(this)
-    val t = ru.appliedType(r.symbol.asType.toType, Nil)
-    val propertyErasure = typeOf[Property[_]].erasure
-    t.members.collect { case m: MethodSymbol if m.returnType.erasure <:< propertyErasure && !m.isConstructor =>
-      r.reflectMethod(m)().asInstanceOf[Property[_]] // reflectField doesnt work oddly
-    }.toSeq
+    this.getClass.getMethods
+      .filter(m => m.getParameterTypes.isEmpty && classOf[Property[_]].isAssignableFrom(m.getReturnType))
+      .map(_.invoke(this).asInstanceOf[Property[_]])
+      .toSeq
   }
 }
 
