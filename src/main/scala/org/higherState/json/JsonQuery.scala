@@ -8,9 +8,9 @@ object JsonQuery {
   import JsonLens._
 
   implicit class JsonQueryExt(val json:Json) extends AnyVal {
-    def find(query:Json) = query.exists {
-      case j:JObject => isMatch(json, j)
-      case v => v == json
+    def isMatch(value:Json) = json.exists {
+      case j:JObject => apply(Some(value), j)
+      case v => v == value
     }
     def &&(d:Json) =
       json.collect {
@@ -32,10 +32,15 @@ object JsonQuery {
     }
   }
 
+  implicit class ContractExt[T <: BaseContract](val c:T) extends AnyVal {
+    def create(f:c.type => Json => Json):JObject =
+      f(c)(JObject.empty).asInstanceOf[JObject]
+  }
+
 
   implicit class ValueQuery[T](val prop: Property[T]) extends AnyVal {
     def $eq(value:T) = nest(prop.pattern.apply(value))
-    def $neq(value:T) = nest(JObject("$ne" -> prop.pattern.apply(value)))
+    def $ne(value:T) = nest(JObject("$ne" -> prop.pattern.apply(value)))
     def $in(values:T*) = nest(JObject("$in" -> JArray(values.map(prop.pattern.apply))))
     def $nin(values:T*) = nest(JObject("$nin" -> JArray(values.map(prop.pattern.apply))))
     def $exists(value:Boolean) = nest(JObject("$exists" -> value.j))
@@ -62,30 +67,42 @@ object JsonQuery {
       pathToObject(prop.absolutePath.segments, obj)
   }
 
-  def isMatch(value:Json, query:JObject):Boolean = {
+  def apply(value:Option[Json], query:JObject):Boolean = {
     query.value.forall{
       case ("$and", JArray(values)) =>
-        values.collect{case j:JObject => j}.forall(isMatch(value, _))
+        values.collect{case j:JObject => j}.forall(apply(value, _))
       case ("$or", JArray(values)) =>
-        values.collect{case j:JObject => j}.exists(isMatch(value, _))
+        values.collect{case j:JObject => j}.exists(apply(value, _))
       case ("$eq", v) =>
-        v == value
+        value.exists(_ == v)
+      case ("$ne", v) =>
+        !value.exists(_ == v) //neq doesnt require existence, as per mongodb
       case ("$lt", v) =>
-        order.lift(value, v).exists(_ == Ordering.LT)
+        value.exists(order.lift(_, v).exists(_ == Ordering.LT))
       case ("$gt", v) =>
-        order.lift(value, v).exists(_ == Ordering.GT)
+        value.exists(order.lift(_, v).exists(_ == Ordering.GT))
       case ("$lte", v) =>
-        order.lift(value, v).exists(r => r == Ordering.LT || r == Ordering.EQ)
+        value.exists(order.lift(_, v).exists(r => r == Ordering.LT || r == Ordering.EQ))
       case ("$gte", v) =>
-        order.lift(value, v).exists(r => r == Ordering.GT || r == Ordering.EQ)
+        value.exists(order.lift(_, v).exists(r => r == Ordering.GT || r == Ordering.EQ))
       case ("$in", JArray(values)) =>
-        values.exists(order.lift(_,value) == Ordering.EQ)
+        value.exists(j => values.exists(order.lift(_, j) == Ordering.EQ))
+      case ("$nin", JArray(values)) =>
+        !value.exists(j => values.exists(order.lift(_, j) == Ordering.EQ)) //nin doesnt require existence, as per mongodb
+      case ("$exists", JBool(v)) =>
+        value.isDefined == v
       case (key, v:JObject) =>
+        value match {
+          case Some(JObject(map)) =>
+            apply(map.get(key), v)
+          case None =>
+            apply(None, v)
+        }
+      case (key, j) =>
         value.exists {
           case JObject(map) if map.contains(key) =>
-            isMatch(map(key), v)
+            map(key) == j
         }
-      case (key, j) => value == j
     }
   }
 

@@ -104,11 +104,19 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     import JsonQuery._
     import JsonLens._
     val q = Document.metadata{d => d.name.$eq("jamie") || d.name.$eq("pants")} && ((Document.age.$lt(35) && Document.age.$gt(12)) || Document.age.$exists(false))
-    println(q)
+    JsonSerializer.prettyPrint(q)
     val match1 = Document.create(d => d.metadata.name.set("jamie") ~ d.age.set(24))
-    //val match2 = Document.create(d => d.)
-
-
+    val match2 = Document.create(d => d.metadata.name.set("pants"))
+    q.isMatch(match1) should be (true)
+    q.isMatch(match2) should be (true)
+    val notMatch1 = Document.create(d => d.age.set(22))
+    val notMatch2 = JObject.empty
+    val notMatch3 = Document.create(d => d.metadata.name.set("nope") ~ d.age.set(24))
+    val notMatch4 = Document.create(d => d.metadata.name.set("jamie") ~ d.age.set(1))
+    q.isMatch(notMatch1) should be (false)
+    q.isMatch(notMatch2) should be (false)
+    q.isMatch(notMatch3) should be (false)
+    q.isMatch(notMatch4) should be (false)
   }
 
 
