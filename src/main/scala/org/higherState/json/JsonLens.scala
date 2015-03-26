@@ -10,6 +10,11 @@ object JsonLens {
       (j: Json) => f2(f(j))
   }
 
+  implicit class ContractExt[T <: BaseContract](val c:T) extends AnyVal {
+    def create(f:c.type => Json => Json):JObject =
+      f(c)(JObject.empty).asInstanceOf[JObject]
+  }
+
   implicit class ValueLens[T](val prop: Property[T]) extends AnyVal {
 
     def get(j:Json):Option[T] =

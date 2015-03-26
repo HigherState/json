@@ -10,7 +10,7 @@ object JsonSerializer {
   def apply(j:Json) = {
     val b = new StringBuilder
     build(j, b, 0, "", "")
-    println(b.toString())
+    b.toString()
   }
   private def build(j:Json, stringBuilder:StringBuilder, tabCount:Int, n:String, tab:String) {
 
@@ -48,9 +48,9 @@ object JsonSerializer {
         val t = (0 until tabCount).map(_ => tab).mkString
         while (i.hasNext) {
           val (key, value) = i.next()
-          stringBuilder ++= t += '\t' += '"' ++= key ++= "\":"
+          stringBuilder ++= t ++= tab += '"' ++= key ++= "\":"
           build(value, stringBuilder, tabCount + 1, n, tab)
-          if (i.hasNext) stringBuilder ++= "'" ++= n
+          if (i.hasNext) stringBuilder ++= "," ++= n
         }
         stringBuilder ++= n ++= t += '}'
       case JArray(value) =>
@@ -58,7 +58,7 @@ object JsonSerializer {
         val t = (0 until tabCount).map(_ => tab).mkString
         val i = value.toIterator
         while (i.hasNext) {
-          stringBuilder ++= t += '\t'
+          stringBuilder ++= t ++= tab
           build(i.next(), stringBuilder, tabCount + 1,n, tab)
           if (i.hasNext) stringBuilder += ',' ++= n
         }

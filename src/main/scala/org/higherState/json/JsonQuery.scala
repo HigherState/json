@@ -32,12 +32,6 @@ object JsonQuery {
     }
   }
 
-  implicit class ContractExt[T <: BaseContract](val c:T) extends AnyVal {
-    def create(f:c.type => Json => Json):JObject =
-      f(c)(JObject.empty).asInstanceOf[JObject]
-  }
-
-
   implicit class ValueQuery[T](val prop: Property[T]) extends AnyVal {
     def $eq(value:T) = nest(prop.pattern.apply(value))
     def $ne(value:T) = nest(JObject("$ne" -> prop.pattern.apply(value)))
