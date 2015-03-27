@@ -1,21 +1,11 @@
 package org.higherState.json
 
-import reflect.runtime.universe._
-import scala.reflect.runtime.{universe=>ru}
-
 trait SelfApply {
   def apply[R](f:this.type => R):R = f(this)
 }
 
 trait BaseContract extends SelfApply {
   implicit protected def absolutePath:Path
-
-  lazy val contractProperties: Seq[Property[_]] = {
-    this.getClass.getMethods
-      .filter(m => m.getParameterTypes.isEmpty && classOf[Property[_]].isAssignableFrom(m.getReturnType))
-      .map(_.invoke(this).asInstanceOf[Property[_]])
-      .toSeq
-  }
 }
 
 abstract class Contract(implicit pattern:Pattern[JObject]) extends BaseContract {
@@ -23,20 +13,13 @@ abstract class Contract(implicit pattern:Pattern[JObject]) extends BaseContract 
 
   def unapply(j:Json):Option[JObject] =
     pattern.unapply(j)
-//
-//  def create(f:this.type => Json => Json):JObject =
-//    f(this)(JObject.empty).asInstanceOf[JObject]
-
 }
 
-abstract class ContractType(key:String, matcher:Matcher = DefaultMatcher)(implicit pattern:Pattern[JObject]) extends BaseContract {
+abstract class ContractType(val key:String, val matcher:Matcher = DefaultMatcher)(implicit pattern:Pattern[JObject]) extends BaseContract {
   implicit protected def absolutePath: Path = Path.empty
   def unapply(j:Json):Option[JObject] =
     pattern.unapply(j).filter(_.value.get(key).exists(matcher.isMatch))
 
-  def create(f:this.type => Json => Json):JObject =
-    f(this)(JObject(Map(key -> matcher.default))).asInstanceOf[JObject]
-  def create() = JObject(Map(key -> matcher.default))
 }
 
 trait Matcher  {

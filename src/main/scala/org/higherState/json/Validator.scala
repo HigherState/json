@@ -1,7 +1,5 @@
 package org.higherState.json
 
-import scalaz.{NonEmptyList, Failure, Success}
-
 trait Validator[+T] {
 
   def validate(value:Option[Json], currentState:Option[Json], path:Path):Seq[(String, Path)]
@@ -43,6 +41,14 @@ case object EmptyValidator extends Validator[Nothing] {
   def schema: JObject = JObject.empty
 }
 
+case object Internal extends SimpleValidator[Option[Nothing]]  {
+  def maybeValid(path:Path) = {
+    case (Some(_), _) =>
+      "Value is reserved and cannot be provided." -> path
+  }
+  def schema: JObject = JObject("reserved" -> JTrue)
+}
+
 trait SimpleValidator[+T] extends Validator[T] {
   def maybeValid(path:Path):PartialFunction[(Option[Json],Option[Json]), (String, Path)]
 
@@ -50,47 +56,56 @@ trait SimpleValidator[+T] extends Validator[T] {
     maybeValid(path).lift(value -> currentState).toSeq
 }
 
-object JsonValidation {
+
+trait ValidationPropertyCache {
+  private var properties:Map[Class[_], Seq[Property[_]]] = Map.empty
+  private var internal:Map[Class[_], Seq[Property[_]]] = Map.empty
+  def getProperties(contract:BaseContract):Seq[Property[_]] =
+    properties.get(contract.getClass) match {
+      case Some(p) =>
+        p
+      case None =>
+        val vp =
+          contract.getClass.getMethods
+            .filter(m => m.getParameterTypes.isEmpty && classOf[Property[_]].isAssignableFrom(m.getReturnType))
+            .map(_.invoke(contract).asInstanceOf[Property[_]])
+            .toSeq
+        this.synchronized {
+          properties = properties + (contract.getClass -> vp)
+        }
+        vp
+    }
+
+  def getInternal(contract:BaseContract):Seq[Property[_]] = {
+    internal.get(contract.getClass) match {
+      case Some(p) =>
+        p
+      case None =>
+        val ip = getProperties(contract).collect {
+          case p if isInternal(p.validator) => Seq(p)
+          case p: BaseContract =>
+            getInternal(p)
+        }.flatten
+        this.synchronized {
+          internal = internal + (contract.getClass -> ip)
+        }
+        ip
+    }
+  }
+
+  private val isInternal:Function[Validator[_], Boolean] = {
+    case AndValidator(l,r) =>
+      isInternal(l) || isInternal(r)
+    case OrValidator(l, r) => // bit odd through excpetion for now
+      throw new Exception("Internal json validator shouldn't be in an 'or' conditional")
+    case v => v == Internal
+  }
+}
+
+trait JsonValidators {
   import JsonConstructor._
 
-  type Numeric = Long with Int with Float with Double with Option[Long] with Option[Int] with Option[Float] with Option[Double]
-  type Length = String with Seq[Nothing]
-  type Optionable[T] = T with Option[T]
 
-  implicit class BaseContractValidation(val contract:BaseContract) extends AnyVal {
-    def validate(newContent:Json):JValid =
-      validate(newContent, None, Path.empty) match {
-        case Nil => Success(newContent)
-        case failure +: failures => Failure(NonEmptyList(failure, failures:_*))
-      }
-
-    def validate(deltaContent:Json, currentState:Json):JValid =
-      validate(deltaContent, Some(currentState), Path.empty) match {
-        case Nil => Success(deltaContent)
-        case failure +: failures => Failure(NonEmptyList(failure, failures:_*))
-      }
-    //TODO better approach here
-    def validate(value: Json, currentState: Option[Json], path:Path): Seq[(String, Path)] =
-      contract.contractProperties.flatMap{p =>
-        val v = JsonPath.getValue(value, p.relativePath.segments)
-        val c = currentState.flatMap(JsonPath.getValue(_, p.relativePath.segments))
-        p.validate(v, c, path ++ p.relativePath)
-      }
-  }
-
-  implicit class PropertyValidation[T](val prop:Property[T]) extends AnyVal {
-    def validate(value: Option[Json], currentState: Option[Json], path:Path): Seq[(String, Path)] =
-      ((value, currentState, prop) match {
-        case (None, None, p: Expected[_]) =>
-          Seq("Value required." -> path)
-        case (Some(v), c, _) if prop.pattern.unapply(v).isEmpty =>
-          Seq(s"Unexpected type '${v.getClass.getSimpleName}'." -> path)
-        case (Some(v), c, b:BaseContract) =>
-          new BaseContractValidation(b).validate(v, c, path)
-        case _ =>
-          Seq.empty
-      }) ++ prop.validator.validate(value, currentState, path)
-  }
 
   val immutable = new SimpleValidator[Nothing] {
     def maybeValid(path:Path) = {
@@ -117,7 +132,9 @@ object JsonValidation {
     def schema: JObject = JObject("reserved" -> JTrue)
   }
 
-  sealed trait BoundedValidator extends SimpleValidator[Numeric] {
+  val internal = Internal
+
+  sealed trait BoundedValidator extends SimpleValidator[JNumeric] {
     def doubleFail(n: Double): Boolean
 
     def longFail(n: Long): Boolean
@@ -142,7 +159,7 @@ object JsonValidation {
     def schema: JObject = JObject("greaterThan" -> value.j)
   }
 
-  def >[T](value: Double):Validator[Numeric] = new BoundedValidator {
+  def >[T](value: Double):Validator[JNumeric] = new BoundedValidator {
     def doubleFail(n: Double): Boolean = n <= value
 
     def longFail(n: Long): Boolean = n <= value
@@ -152,7 +169,7 @@ object JsonValidation {
     def schema: JObject = JObject("greaterThan" -> value.j)
   }
 
-  def >=[T](value: Long):Validator[Numeric] = new BoundedValidator {
+  def >=[T](value: Long):Validator[JNumeric] = new BoundedValidator {
     def doubleFail(n: Double): Boolean = n < value
 
     def longFail(n: Long): Boolean = n < value
@@ -212,16 +229,43 @@ object JsonValidation {
     def schema: JObject = JObject("lessThanEquals" -> value.j)
   }
 
-  def in[T](values:T*)(implicit pattern:Pattern[T]) = new SimpleValidator[Optionable[T]] {
-    def schema: JObject = JObject("isIn" -> JArray(values.map(pattern.apply)))
+  def in[T](values:T*)(implicit pattern:Pattern[T]) = new SimpleValidator[JOptionable[T]] {
+    def schema: JObject = JObject("is in" -> JArray(values.map(pattern.apply)))
 
     def maybeValid(path: Path): PartialFunction[(Option[Json], Option[Json]), (String, Path)] = {
       case (Some(pattern(j)), _) if !values.contains(j) =>
-        s"Unexpected type '${j.getClass.getSimpleName}'." -> path
+        "Value outside of allowed values." -> path
     }
   }
 
-  def minLength(value: Int) = new SimpleValidator[Optionable[Length]] {
+  def nin[T](values:T*)(implicit pattern:Pattern[T]) = new SimpleValidator[JOptionable[T]] {
+    def schema: JObject = JObject("notIn" -> JArray(values.map(pattern.apply)))
+
+    def maybeValid(path: Path): PartialFunction[(Option[Json], Option[Json]), (String, Path)] = {
+      case (Some(pattern(j)), _) if !values.contains(j) =>
+        "Value not allowed." -> path
+    }
+  }
+
+  def inCaseInsensitive(values:String*) = new SimpleValidator[JOptionable[String]] {
+    def schema: JObject = JObject("is in" -> JArray(values.map(JString)), "caseInsensitive" -> JTrue)
+
+    def maybeValid(path: Path): PartialFunction[(Option[Json], Option[Json]), (String, Path)] = {
+      case (Some(JString(s)), _) if !values.exists(_.equalsIgnoreCase(s)) =>
+        "Value outside of allowed values." -> path
+    }
+  }
+
+  def ninCaseInsensitive(values:String*) = new SimpleValidator[JOptionable[String]] {
+    def schema: JObject = JObject("not in" -> JArray(values.map(JString)), "caseInsensitive" -> JTrue)
+
+    def maybeValid(path: Path): PartialFunction[(Option[Json], Option[Json]), (String, Path)] = {
+      case (Some(JString(s)), _) if values.exists(_.equalsIgnoreCase(s)) =>
+        "Value outside of allowed values." -> path
+    }
+  }
+
+  def minLength(value: Int) = new SimpleValidator[JOptionable[JLength]] {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.length < value =>
         s"Array must have length of at least $value" -> path
@@ -230,7 +274,7 @@ object JsonValidation {
     def schema: JObject = JObject("minLength" -> value.j)
   }
 
-  def maxLength(value: Int) = new SimpleValidator[Optionable[Length]] {
+  def maxLength(value: Int) = new SimpleValidator[JOptionable[JLength]] {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.length > value =>
         s"Array must have length of no greater than $value" -> path
@@ -239,7 +283,7 @@ object JsonValidation {
     def schema: JObject = JObject("maxLength" -> value.j)
   }
 
-  val nonEmpty = new SimpleValidator[Optionable[Length]] {
+  val nonEmpty = new SimpleValidator[JOptionable[JLength]] {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.isEmpty =>
         s"Array must not be empty" -> path
@@ -248,7 +292,7 @@ object JsonValidation {
     def schema: JObject = JObject("nonEmpty" -> JTrue)
   }
 
-  val nonEmptyOrWhiteSpace:Validator[String] = new SimpleValidator[Length] {
+  val nonEmptyOrWhiteSpace:Validator[String] = new SimpleValidator[JLength] {
     def maybeValid(path: Path) = {
       case (Some(JString(text)), _) if text.trim().isEmpty =>
         s"Text must not be all empty or whitespace" -> path
@@ -257,7 +301,7 @@ object JsonValidation {
     def schema: JObject = JObject("nonEmptyOrWhitespace" -> JTrue)
   }
 
-  def forall[T](validator: Validator[T]) = new Validator[Optionable[Seq[Nothing]]] {
+  def forall[T](validator: Validator[T]) = new Validator[JOptionable[Seq[Nothing]]] {
     def validate(value: Option[Json], currentState: Option[Json], pathContext: Path): Seq[(String, Path)] =
       value collect {
         case JArray(seq) =>
@@ -271,16 +315,19 @@ object JsonValidation {
   }
 
   //TODO Forall doesnt validate agains current state, bit of an odd one..
-  def forall(contract: BaseContract) = new Validator[Optionable[Seq[Nothing]]] {
+  def forall(contract: BaseContract) = new Validator[JOptionable[Seq[Nothing]]] {
     def validate(value: Option[Json], currentState: Option[Json], pathContext: Path): Seq[(String, Path)] =
       value collect {
         case JArray(seq) =>
           for {
             (e, i) <- seq.zipWithIndex
-            v <- BaseContractValidation(contract).validate(e, None, pathContext \ i)
+            v <- JsonValidation.BaseContractValidation(contract).$validate(e, None, pathContext \ i)
           } yield v
       } getOrElse Seq.empty
 
     def schema = JObject.empty //("items" -> contract.schema)
   }
 }
+
+object DefaultValidators extends JsonValidators
+

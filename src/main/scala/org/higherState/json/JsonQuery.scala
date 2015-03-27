@@ -43,7 +43,7 @@ object JsonQuery {
       pathToObject(prop.absolutePath.segments, obj)
   }
 
-  implicit class NumericQuery[T >: JsonValidation.Numeric](val prop: Property[T]) extends AnyVal {
+  implicit class NumericQuery[T >: JNumeric](val prop: Property[T]) extends AnyVal {
 
     def $lt(value:Double) = nest(JObject("$lt" -> value.j))
     def $lt(value:Long) = nest(JObject("$lt" -> value.j))

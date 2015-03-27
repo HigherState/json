@@ -11,23 +11,29 @@ object JsonLens {
   }
 
   implicit class ContractExt[T <: BaseContract](val c:T) extends AnyVal {
-    def create(f:c.type => Json => Json):JObject =
+    def $create(f:c.type => Json => Json):JObject =
       f(c)(JObject.empty).asInstanceOf[JObject]
+  }
+
+  implicit class ContractTypeExt[T <: ContractType](val c:T) extends AnyVal {
+    def $create(f:c.type => Json => Json):JObject =
+      f(c)(JObject(Map(c.key -> c.matcher.default))).asInstanceOf[JObject]
+    def $create() = JObject(Map(c.key -> c.matcher.default))
   }
 
   implicit class ValueLens[T](val prop: Property[T]) extends AnyVal {
 
-    def get(j:Json):Option[T] =
+    def $get(j:Json):Option[T] =
       getValue(j, prop.absolutePath.segments).flatMap(prop.pattern.unapply)
-    def set =
+    def $set =
       (value:T) => (j:Json) => setValue(Some(j), prop.absolutePath.segments, prop.pattern(value))
-    def modify =
+    def $modify =
       (func:T => T) => (j:Json) =>
-       get(j).fold[Json](j)(v => setValue(Some(j), prop.absolutePath.segments, prop.pattern(func(v))))
-    def maybeModify =
+       $get(j).fold[Json](j)(v => setValue(Some(j), prop.absolutePath.segments, prop.pattern(func(v))))
+    def $maybeModify =
       (func:Option[T] => T) => (j:Json) =>
-        setValue(Some(j), prop.absolutePath.segments, prop.pattern(func(get(j))))
-    def copy =
+        setValue(Some(j), prop.absolutePath.segments, prop.pattern(func($get(j))))
+    def $copy =
       (p:Property[T]) => (j:Json) => {
         getValue(j, prop.absolutePath.segments) match {
           case None =>
@@ -66,7 +72,7 @@ object JsonLens {
   }
 
   implicit class MaybeLens[T](val prop: Property[Option[T]]) extends AnyVal {
-    def drop =
+    def $drop =
       (j:Json) => dropValue(j, prop.absolutePath.segments)
 //    def move =
 //      (p:Property[T]) => (j:Json) => {
@@ -81,15 +87,15 @@ object JsonLens {
   }
 
   implicit class ArrayLens[T](val prop: \:[T]) extends AnyVal {
-    def at(index:Int) = ArrayElement[T](index, prop.absolutePath)(prop.elementPattern)
+    def $at(index:Int) = ArrayElement[T](index, prop.absolutePath)(prop.elementPattern)
 
-    def head = ArrayElement[T](0, prop.absolutePath)(prop.elementPattern)
+    def $head = ArrayElement[T](0, prop.absolutePath)(prop.elementPattern)
 
-    def append =
+    def $append =
       (value:T) => (j:Json) =>
         setValue(Some(j), prop.absolutePath.segments, prop.seqPattern.apply(current(j) :+ prop.elementPattern(value)))
 
-    def prepend =
+    def $prepend =
       (value:T) => (j:Json) =>
         prop.seqPattern.apply(prop.elementPattern(value) +: current(j))
 
@@ -97,20 +103,21 @@ object JsonLens {
   }
 
   implicit class MaybeArrayLens[T](val prop: \:?[T]) extends AnyVal {
-    def at(index:Int) = ArrayElement[T](index, prop.absolutePath)(prop.elementPattern)
+    def $at(index:Int) = ArrayElement[T](index, prop.absolutePath)(prop.elementPattern)
 
-    def head = ArrayElement[T](0, prop.absolutePath)(prop.elementPattern)
+    def $head = ArrayElement[T](0, prop.absolutePath)(prop.elementPattern)
 
-    def append =
+    def $append =
       (value:T) => (j:Json) =>
         setValue(Some(j), prop.absolutePath.segments, prop.seqPattern.apply(current(j) :+ prop.elementPattern(value)))
 
-    def prepend =
+    def $prepend =
       (value:T) => (j:Json) =>
         prop.seqPattern.apply(prop.elementPattern(value) +: current(j))
 
     protected def current(j:Json) = getValue(j, prop.absolutePath.segments).flatMap(prop.seqPattern.unapply).getOrElse(Seq.empty)
   }
+
   case class ArrayElement[T](index:Int, arrayPath:Path)(implicit val pattern:Pattern[T]) extends Property[T]  {
 
     def relativePath: Path = Path(index)
