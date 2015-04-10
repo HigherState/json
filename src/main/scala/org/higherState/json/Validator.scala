@@ -103,8 +103,8 @@ trait ValidationPropertyCache {
 }
 
 trait JsonValidators {
+  import DefaultPatterns._
   import JsonConstructor._
-
 
 
   val immutable = new SimpleValidator[Nothing] {

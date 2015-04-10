@@ -9,9 +9,9 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
 
   import DefaultPatterns._
   import DefaultValidators._
-  import JsonConstructor._
   import JsonValidation._
   import JsonMatchers._
+  import JsonConstructor._
 
   trait Created extends SubContract {
     val user = \[String]("user", nonEmptyOrWhiteSpace)
@@ -24,7 +24,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
   }
 
   object Document extends Contract {
-    val id = \[UUID]("Id")
+    val id = \[String]("Id")
     val age = \[Long]("age", immutable && DefaultValidators.>=(0) && DefaultValidators.<=(100))
     val default = \![Boolean]("default", false, notNull)
     val metadata = new \\("metadata") with Metadata
@@ -32,11 +32,11 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
   }
 
   object TypeTest extends ContractType("type", "Test") {
-    val id = \[UUID]("Id")
+    val id = \[String]("Id")
   }
 
   object KeyMatchTest extends ContractType("type") {
-    val id = \[UUID]("Id")
+    val id = \[String]("Id")
   }
 
   object Nested extends Contract {
@@ -84,7 +84,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
         println("Matched")
     }
 
-    println(TypeTest.$create(_.id.$set(UUID.randomUUID())))
+    println(TypeTest.$create(_.id.$set(UUID.randomUUID().toString)))
   }
 
   test("test path") {
@@ -127,7 +127,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     import JsonValidation._
 
     val completeDocument = Document.$create{d =>
-      d.id.$set(UUID.randomUUID()) ~
+      d.id.$set(UUID.randomUUID().toString) ~
       d.age.$set(45) ~
       d.phone.$set(Some(1234124213L)) ~
       d.metadata.created.time.$set(1243134L) ~

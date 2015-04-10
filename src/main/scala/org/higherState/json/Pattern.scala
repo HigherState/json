@@ -1,8 +1,5 @@
 package org.higherState.json
 
-import java.util.UUID
-
-
 trait Pattern[T] {
   protected def extractor:PartialFunction[Json, T]
   def apply(t:T):Json
@@ -38,9 +35,16 @@ trait SeqExtractor[T] {
   def unapply(s:Seq[Json]):Option[Seq[T]]
 }
 
+trait JsonConstructor {
+  implicit class ToJ[T](val value:T)(implicit pattern:Pattern[T]) {
+    def j = pattern(value)
+  }
+}
+
+object JsonConstructor extends JsonConstructor
+
 trait JsonPatterns {
 
-  import JsonConstructor._
   import JsonSchema._
 
   implicit val booleanPattern:Pattern[Boolean] = new RequiredValuePattern[Boolean]("boolean"){
@@ -101,25 +105,6 @@ trait JsonPatterns {
       JDouble(t)
   }
 
-  protected val uuidRegex = "([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})".r
-
-  implicit val uuidPattern:Pattern[UUID] = new RequiredValuePattern[UUID]("guid") {
-    protected def extractor: PartialFunction[Json, UUID] = {
-      case JString(uuidRegex(v)) => UUID.fromString(v)
-    }
-
-    def apply(t: UUID): Json =
-      JString(t.toString)
-  }
-
-//  implicit val datetime:Pattern[DateTime] = new RequiredValuePattern[DateTime]("datetime") {
-//    protected def extractor: PartialFunction[Json, DateTime] = {
-//      case JString(StringUtil.jsonDate(v)) => new DateTime(v.toLong, DateTimeZone.UTC)
-//    }
-//
-//    def apply(t: DateTime): Json = JString(s"Date(${t.getMillis})")
-//  }
-
   implicit val jsonPattern:Pattern[Json] = new RequiredValuePattern[Json]("json"){
     protected def extractor = {
       case j => j
@@ -140,11 +125,29 @@ trait JsonPatterns {
     }
     def apply(t:JMap): Json = JObject(t)
   }
+  implicit val jArrayPattern:Pattern[Array[Json]] = new RequiredValuePattern[Array[Json]]("array"){
+    protected def extractor = {
+      case JArray(j) => j.toArray
+    }
+    def apply(t:Array[Json]): Json = JArray(t)
+  }
   implicit val jSeqPattern:Pattern[Seq[Json]] = new RequiredValuePattern[Seq[Json]]("array"){
     protected def extractor = {
       case JArray(j) => j
     }
     def apply(t:Seq[Json]): Json = JArray(t)
+  }
+  implicit val jListPattern:Pattern[List[Json]] = new RequiredValuePattern[List[Json]]("array"){
+    protected def extractor = {
+      case JArray(j) => j.toList
+    }
+    def apply(t:List[Json]): Json = JArray(t)
+  }
+  implicit val jVectorPattern:Pattern[Vector[Json]] = new RequiredValuePattern[Vector[Json]]("array"){
+    protected def extractor = {
+      case JArray(j) => j.toVector
+    }
+    def apply(t:Vector[Json]): Json = JArray(t)
   }
 
   implicit def allExtractedPattern[T](implicit pattern:Pattern[T]) = new SeqExtractor[T] {
@@ -164,7 +167,7 @@ trait JsonPatterns {
     def apply(t: Seq[T]): Json =
       JArray(t.map(pattern.apply))
 
-    def schema: JObject = JObject(TYPE -> "array".j, ITEMS -> pattern.schema)
+    def schema: JObject = JObject(TYPE -> JString("array"), ITEMS -> pattern.schema)
   }
 
   implicit def optionPattern[T](implicit pattern:Pattern[T]) = new Pattern[Option[T]] {
@@ -187,7 +190,7 @@ trait JsonPatterns {
       JArray(Seq(pattern1(t._1), pattern2(t._2)))
 
     def schema: JObject =
-      JObject(TYPE -> "array".j, ITEMS -> JArray(pattern1.schema, pattern2.schema))
+      JObject(TYPE -> JString("array"), ITEMS -> JArray(pattern1.schema, pattern2.schema))
   }
 
   implicit def eitherPattern[T1,T2] (implicit pattern1:Pattern[T1], pattern2:Pattern[T2]) = new Pattern[Either[T1, T2]] {

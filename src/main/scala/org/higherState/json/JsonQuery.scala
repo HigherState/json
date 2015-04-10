@@ -4,8 +4,9 @@ import scalaz._
 import Scalaz._
 
 object JsonQuery {
-  import JsonConstructor._
   import JsonLens._
+  import DefaultPatterns._
+  import JsonConstructor._
 
   implicit class JsonQueryExt(val json:Json) extends AnyVal {
     def isMatch(value:Json) = json.exists {
