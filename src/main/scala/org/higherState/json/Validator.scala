@@ -269,6 +269,8 @@ trait JsonValidators {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.length < value =>
         s"Array must have length of at least $value" -> path
+      case (Some(JString(s)), _) if s.length < value =>
+        s"String must have length of at least $value" -> path
     }
 
     def schema: JObject = JObject("minLength" -> value.j)
@@ -278,6 +280,8 @@ trait JsonValidators {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.length > value =>
         s"Array must have length of no greater than $value" -> path
+      case (Some(JString(s)), _) if s.length > value =>
+        s"String must have length of no greater than $value" -> path
     }
 
     def schema: JObject = JObject("maxLength" -> value.j)
@@ -287,6 +291,8 @@ trait JsonValidators {
     def maybeValid(path: Path) = {
       case (Some(JArray(seq)), _) if seq.isEmpty =>
         s"Array must not be empty" -> path
+      case (Some(JString(s)), _) if s.isEmpty =>
+        s"String must not be empty" -> path
     }
 
     def schema: JObject = JObject("nonEmpty" -> JTrue)
