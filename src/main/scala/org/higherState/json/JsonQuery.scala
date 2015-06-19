@@ -62,6 +62,33 @@ object JsonQuery {
       pathToObject(prop.absolutePath.segments, obj)
   }
 
+  implicit class ArrayQuery[T](val prop: Property[Seq[T]])(implicit p:Pattern[T]) {
+
+    def $elemMatch(f:Property[T] => Json):Json =
+      nest(JObject("$elemMatch" -> f(emptyProperty.asInstanceOf[Property[T]])))
+
+
+    private def nest(obj:JObject) =
+      pathToObject(prop.absolutePath.segments, obj)
+  }
+
+  implicit class MaybeArrayQuery[T](val prop: Property[Option[Seq[T]]])(implicit p:Pattern[T]) {
+
+    def $elemMatch(f:Property[T] => Json):Json =
+      nest(JObject("$elemMatch" -> f(emptyProperty.asInstanceOf[Property[T]])))
+
+
+    private def nest(obj:JObject) =
+      pathToObject(prop.absolutePath.segments, obj)
+  }
+
+  private def emptyProperty[T](implicit p:Pattern[T]) = new Property[T] {
+    val pattern: Pattern[T] = p
+    def absolutePath: Path = Path.empty
+    def relativePath: Path = Path.empty
+    def validator: Validator[T] = ???
+  }
+
   def apply(value:Option[Json], query:JObject):Boolean = {
     query.value.forall{
       case ("$and", JArray(values)) =>
@@ -86,6 +113,10 @@ object JsonQuery {
         !value.exists(j => values.exists(order.lift(_, j) == Ordering.EQ)) //nin doesnt require existence, as per mongodb
       case ("$exists", JBool(v)) =>
         value.isDefined == v
+      case ("$elemMatch", j:JObject) =>
+        value.collect{ case JArray(seq) => seq.exists(s => apply(Some(s), j))}.getOrElse(false)
+      case ("$elemMatch", v) =>
+        value.collect{ case JArray(seq) => seq.contains(v)}.getOrElse(false)
       case (key, v:JObject) =>
         value match {
           case Some(JObject(map)) =>

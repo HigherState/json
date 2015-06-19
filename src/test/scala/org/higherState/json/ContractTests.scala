@@ -101,6 +101,10 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     println(Document.age.$modify(_ + 1)(document))
     println(Document.phone.$modify(_.map(_ + 2372321).orElse(Some(12323)))(document))
   }
+  object WithArray extends Contract {
+    val a = \:[String]("a")
+    val ints = \:[Int]("ints")
+  }
 
   test("Query") {
     import JsonQuery._
@@ -120,6 +124,23 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     q.isMatch(notMatch2) should be (false)
     q.isMatch(notMatch3) should be (false)
     q.isMatch(notMatch4) should be (false)
+
+    val qa = WithArray.a.$elemMatch(_.$eq("one"))
+
+    val sa = WithArray.$create(w => w.a.$set(Seq("one", "two")))
+    val fa = WithArray.$create(w => w.a.$set(Seq("two", "three")))
+
+    qa.isMatch(sa) should be (true)
+    qa.isMatch(fa) should be (false)
+
+    val qa2 = WithArray.ints.$elemMatch(i => i.$gt(2) && i.$lt(15))
+
+    val sa2 = WithArray.$create(w => w.ints.$set(Seq(1,2,3,17)))
+    val fa2 = WithArray.$create(w => w.ints.$set(Seq(1,2,17)))
+
+    qa2.isMatch(sa2) should be (true)
+    qa2.isMatch(fa2) should be (false)
+    println(qa)
   }
 
   test("Sanitize") {
