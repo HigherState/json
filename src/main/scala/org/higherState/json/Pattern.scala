@@ -149,6 +149,12 @@ trait JsonPatterns {
     }
     def apply(t:Vector[Json]): Json = JArray(t)
   }
+  implicit val jSetPattern:Pattern[Set[Json]] = new RequiredValuePattern[Set[Json]]("array"){
+    protected def extractor = {
+      case JArray(j) => j.toSet
+    }
+    def apply(t:Set[Json]): Json = JArray(t.toSeq)
+  }
 
   implicit def allExtractedPattern[T](implicit pattern:Pattern[T]) = new SeqExtractor[T] {
     def unapply(j:Seq[Json]):Option[Seq[T]] = {
@@ -166,6 +172,17 @@ trait JsonPatterns {
 
     def apply(t: Seq[T]): Json =
       JArray(t.map(pattern.apply))
+
+    def schema: JObject = JObject(TYPE -> JString("array"), ITEMS -> pattern.schema)
+  }
+
+  implicit def setPattern[T](implicit sqlExtractor:SeqExtractor[T], pattern:Pattern[T]) = new Pattern[Set[T]] {
+    protected def extractor = {
+      case JArray(sqlExtractor(j)) => j.toSet
+    }
+
+    def apply(t: Set[T]): Json =
+      JArray(t.map(pattern.apply).toSeq)
 
     def schema: JObject = JObject(TYPE -> JString("array"), ITEMS -> pattern.schema)
   }

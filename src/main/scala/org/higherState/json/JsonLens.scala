@@ -10,6 +10,11 @@ object JsonLens {
       (j: Json) => f2(f(j))
   }
 
+  implicit class ValueContractExt[T](val c:ValueContract[T]) extends AnyVal {
+    def $create(value:T):Json =
+      c.pattern.apply(value)
+  }
+
   implicit class ContractExt[T <: BaseContract](val c:T) extends AnyVal {
     def $create(f:c.type => Json => Json):JObject =
       f(c)(JObject.empty).asInstanceOf[JObject]

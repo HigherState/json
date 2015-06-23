@@ -82,6 +82,26 @@ object JsonQuery {
       pathToObject(prop.absolutePath.segments, obj)
   }
 
+  implicit class SetQuery[T](val prop: Property[Set[T]])(implicit p:Pattern[T]) {
+
+    def $elemMatch(f:Property[T] => Json):Json =
+      nest(JObject("$elemMatch" -> f(emptyProperty.asInstanceOf[Property[T]])))
+
+
+    private def nest(obj:JObject) =
+      pathToObject(prop.absolutePath.segments, obj)
+  }
+
+  implicit class MaybeSetQuery[T](val prop: Property[Option[Set[T]]])(implicit p:Pattern[T]) {
+
+    def $elemMatch(f:Property[T] => Json):Json =
+      nest(JObject("$elemMatch" -> f(emptyProperty.asInstanceOf[Property[T]])))
+
+
+    private def nest(obj:JObject) =
+      pathToObject(prop.absolutePath.segments, obj)
+  }
+
   private def emptyProperty[T](implicit p:Pattern[T]) = new Property[T] {
     val pattern: Pattern[T] = p
     def absolutePath: Path = Path.empty

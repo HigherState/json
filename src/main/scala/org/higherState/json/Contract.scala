@@ -19,7 +19,13 @@ abstract class ContractType(val key:String, val matcher:Matcher = DefaultMatcher
   implicit protected def absolutePath: Path = Path.empty
   def unapply(j:Json):Option[JObject] =
     pattern.unapply(j).filter(_.value.get(key).exists(matcher.isMatch))
+}
 
+abstract class ValueContract[T](val validator: Validator[T] = EmptyValidator)(implicit val pattern:Pattern[T]) extends BaseContract with Property[T] {
+  implicit val absolutePath: Path = Path.empty
+  val relativePath: Path = Path.empty
+  def unapply(j:Json):Option[T] =
+    pattern.unapply(j)
 }
 
 trait Matcher  {

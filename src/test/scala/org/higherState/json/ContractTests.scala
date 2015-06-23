@@ -220,4 +220,35 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
 
   }
 
+  object WithSet extends Contract {
+    val set = \[Set[String]]("set")
+  }
+
+  test("set") {
+    import JsonLens._
+
+    val d = WithSet.$create(_.set.$set(Set("one", "two", "three")))
+    JsonSerializer.prettyPrint(d)
+
+    val d2 = WithSet.set.$modify(_ + "four")(d)
+    d2 match {
+      case WithSet.set(s) => println(s)
+    }
+  }
+
+  object WithS extends ValueContract[Set[Int]]
+
+  test("Set value Contrat") {
+    import JsonLens._
+    import JsonQuery._
+    val d = WithS.$create(Set(1,2,3))
+    JsonSerializer.prettyPrint(d)
+    val d2 = WithS.$modify(_ + 4)(d)
+    d2 match {
+      case WithS(s) => println(s)
+    }
+    val q = WithS.$elemMatch(e => e.$gt(4) && e.$lt(6))
+    JsonSerializer.prettyPrint(q)
+  }
+
 }
