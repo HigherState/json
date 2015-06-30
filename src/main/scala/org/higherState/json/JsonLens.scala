@@ -33,16 +33,9 @@ object JsonLens {
     def $set =
       (value:T) => (j:Json) => setValue(Some(j), prop.absolutePath.segments, prop.pattern(value))
     //applies set if value is nonEmpty, does not drop on empty
-    def $optionSet =
-      (value:Option[T]) => (j:Json) => value.fold(j){v =>
-        setValue(Some(j), prop.absolutePath.segments, prop.pattern(v))
-      }
     def $modify =
       (func:T => T) => (j:Json) =>
-       $get(j).fold[Json](j)(v => setValue(Some(j), prop.absolutePath.segments, prop.pattern(func(v))))
-    def $maybeModify =
-      (func:Option[T] => T) => (j:Json) =>
-        setValue(Some(j), prop.absolutePath.segments, prop.pattern(func($get(j))))
+        $get(j).fold[Json](j)(v => setValue(Some(j), prop.absolutePath.segments, prop.pattern(func(v))))
     def $copy =
       (p:Property[T]) => (j:Json) => {
         getValue(j, prop.absolutePath.segments) match {
@@ -50,6 +43,31 @@ object JsonLens {
           case Some(value) =>
             insertValue(Some(j), p.absolutePath.segments, value)
         }
+      }
+  }
+
+  implicit class MaybeValueLens[T](val prop: Property[Option[T]]) extends AnyVal {
+
+    def $maybeSet =
+      (value:Option[T]) => (j:Json) =>
+        value.fold(j){v =>
+          setValue(Some(j), prop.absolutePath.segments, prop.pattern(Some(v)))
+        }
+    def $modifyOrDrop =
+      (func:Option[T] => Option[T]) => (j:Json) => {
+        getValue(j, prop.absolutePath.segments).flatMap(prop.pattern.unapply).flatten.fold{
+          dropValue(j, prop.absolutePath.segments)
+        } { v =>
+          setValue(Some(j), prop.absolutePath.segments, prop.pattern(func(Some(v))))
+        }
+      }
+    //applies set if value is nonEmpty, does not drop on empty
+    def $drop =
+      (j:Json) => dropValue(j, prop.absolutePath.segments)
+
+    def $setOrDrop =
+      (value:Option[Option[T]]) => (j:Json) => value.fold(dropValue(j, prop.absolutePath.segments)){v =>
+        setValue(Some(j), prop.absolutePath.segments, prop.pattern(v))
       }
   }
 
@@ -79,26 +97,6 @@ object JsonLens {
 
     def delta(delta:Json):Json =
       applyDelta(json, delta)
-  }
-
-  implicit class MaybeLens[T](val prop: Property[Option[T]]) extends AnyVal {
-    def $drop =
-      (j:Json) => dropValue(j, prop.absolutePath.segments)
-
-    def $setOrDrop =
-      (value:Option[Option[T]]) => (j:Json) => value.fold(dropValue(j, prop.absolutePath.segments)){v =>
-        setValue(Some(j), prop.absolutePath.segments, prop.pattern(v))
-      }
-//    def move =
-//      (p:Property[T]) => (j:Json) => {
-//        getValue(j, prop.path.segments) match {
-//          case None =>
-//            dropValue(j, prop.path.segments)
-//          case Some(value) =>
-//            val j2 = dropValue(j, prop.path.segments)
-//            insertValue(Some(j2), p.path.segments, value)
-//        }
-//      }
   }
 
   implicit class ArrayLens[T](val prop: \:[T]) extends AnyVal {

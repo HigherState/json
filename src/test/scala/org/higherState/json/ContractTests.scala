@@ -70,6 +70,11 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     println(document.append("temp" -> 1.j))
 
     println(document.concat(JObject("temp" -> 1.j)))
+    val t = Document.phone.$maybeSet(Some(12314))(document)
+    println(t)
+    println(Document.phone.$set(None)(t))
+    println(Document.phone.$setOrDrop(None)(t))
+    println(Document.phone.$maybeSet(None)(document))
   }
 
   test("Validate") {
