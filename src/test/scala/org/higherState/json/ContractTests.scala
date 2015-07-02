@@ -64,12 +64,12 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     println(Document.$validate(document, JObject("Id" -> UUID.randomUUID().toString.j, "age" -> 223.j)))
 //    println(Document.schema)
 
-    println(document.select(Document.age, Document.metadata.name))
-    println(document.exclude(Document.id))
+    println(document.$select(Document.age, Document.metadata.name))
+    println(document.$exclude(Document.id))
 
-    println(document.append("temp" -> 1.j))
+    println(document.$append("temp" -> 1.j))
 
-    println(document.concat(JObject("temp" -> 1.j)))
+    println(document.$concat(JObject("temp" -> 1.j)))
     val t = Document.phone.$maybeSet(Some(12314))(document)
     println(t)
     println(Document.phone.$set(None)(t))

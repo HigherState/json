@@ -1,5 +1,7 @@
 package org.higherState.json
 
+import scalaz.Scalaz._
+
 object JsonFunctions {
   /**
    * Concatenate and replace json structure with delta, where a JNull or Empty JObject value will clear the key value pair
@@ -12,6 +14,21 @@ object JsonFunctions {
         applyObjectDelta(t,d)
       case _ =>
         delta
+    }
+
+  def difference(delta:Json, source:Json):Option[Json] =
+    (delta, source) match {
+      case (d, s) if d == s =>
+        None
+      case (d:JObject, s:JObject) =>
+        val o = d.value.flatMap { kvp =>
+          s.value.get(kvp._1).fold(Option(kvp)){ v =>
+            difference(kvp._2, v).map(kvp._1 -> _)
+          }
+        }
+        o.nonEmpty.option(JObject(o))
+      case (d, _) =>
+        Some(d)
     }
 
   def setValue(target:Option[Json], segments:Segments, value:Json, insert:Boolean = false):Json =

@@ -35,7 +35,7 @@ object JsonPath {
         obj.get(head).flatMap(getValue(_, tail))
       case (Right(head) +: tail, JArray(array)) =>
         if (head < array.size)
-          Some(array(head))
+          Some(array(head)).flatMap(getValue(_, tail))
         else
           None
       case _ => None

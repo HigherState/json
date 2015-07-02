@@ -72,31 +72,36 @@ object JsonLens {
   }
 
   implicit class JsonLens[T](val json:Json) extends AnyVal {
-    def select(properties:Property[_]*):Json = {
+    def $select(properties:Property[_]*):Json = {
       properties.foldLeft(JObject.empty.asInstanceOf[Json]) { (j, p) =>
         getValue(json, p.absolutePath.segments).fold(j){v =>
           setValue(Some(j), p.absolutePath.segments, v)
         }
       }
     }
-    def exclude(properties:Property[_]*):Json = {
+    def $exclude(properties:Property[_]*):Json = {
       properties.foldLeft(json){ (j, p) =>
         dropValue(j, p.absolutePath.segments)
       }
     }
-    def append(params:(String, Json)*):Json = json match {
+    def $append(params:(String, Json)*):Json = json match {
       case JObject(value) => JObject(value ++ params)
       case _ => json
     }
-    def concat(value:Json):Json = json -> value match {
+    def $concat(value:Json):Json = json -> value match {
       case (JObject(c), JObject(d)) => JObject(c ++ d)
       case (JArray(c), JArray(d)) => JArray(c ++ d)
       case (JArray(c), d) => JArray(c :+ d)
       case (c, d) => JArray(Seq(c, d))
     }
 
-    def delta(delta:Json):Json =
+    def $delta(delta:Json):Json =
       applyDelta(json, delta)
+
+    //null corresponds to not found value
+    def $diff(source:Json):Option[Json] =
+      difference(json, source)
+
   }
 
   implicit class ArrayLens[T](val prop: \:[T]) extends AnyVal {
