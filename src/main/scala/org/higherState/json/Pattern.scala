@@ -187,6 +187,17 @@ trait JsonPatterns {
     def schema: JObject = JObject(TYPE -> JString("array"), ITEMS -> pattern.schema)
   }
 
+  implicit def mapPattern[T](implicit pattern:Pattern[T]) = new Pattern[Map[String, T]] {
+    protected def extractor: PartialFunction[Json, Map[String, T]] = {
+      case JObject(m) => m.collect{ case (k, pattern(v)) => k -> v}
+    }
+
+    def apply(t: Map[String, T]): Json =
+      JObject(t.mapValues(pattern.apply))
+
+    def schema: JObject = ???
+  }
+
   implicit def optionPattern[T](implicit pattern:Pattern[T]) = new Pattern[Option[T]] {
     def schema: JObject = JObject(pattern.schema.value + (REQUIRED -> JFalse))
 

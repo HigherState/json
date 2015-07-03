@@ -20,8 +20,8 @@ object JsonQuery {
         case JObject(m) if m.contains("$and") =>
           d.collect {
             case JObject(m2) if m2.contains("$and") =>
-              JObject("$and" -> m("$and").$concat(m2("$and")))
-          }.getOrElse(JObject("$and" -> m("$and").$concat(d)))
+              JObject("$and" -> m("$and").concat(m2("$and")))
+          }.getOrElse(JObject("$and" -> m("$and").concat(d)))
       }.getOrElse(JsonFunctions.applyDelta(json, d))
 
 

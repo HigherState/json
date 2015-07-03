@@ -7,18 +7,32 @@ import scalaz.Success
 
 object JsonValidation extends ValidationPropertyCache {
 
-  implicit class BaseContractValidation(val contract:BaseContract) extends AnyVal {
+  //TODO: test validation of nested Contracts with forall/values
+  implicit class ValueContractValidation[T](val contract:ValueContract[T]) extends AnyVal {
     def $validate(newContent:Json):JValid =
-      $validate(newContent, None, Path.empty) match {
-        case Nil => Success(newContent)
-        case failure +: failures => Failure(NonEmptyList(failure, failures:_*))
-      }
+      seqToJValid($validate(newContent, None, Path.empty), newContent)
 
     def $validate(deltaContent:Json, currentState:Json):JValid =
-      $validate(deltaContent, Some(currentState), Path.empty) match {
-        case Nil => Success(deltaContent)
-        case failure +: failures => Failure(NonEmptyList(failure, failures:_*))
-      }
+      seqToJValid($validate(deltaContent, Some(currentState), Path.empty), deltaContent)
+    //TODO better approach here
+    def $validate(deltaContent:Json, currentState:Option[Json]):JValid =
+      seqToJValid($validate(deltaContent, currentState, Path.empty), deltaContent)
+
+    def $validate(value: Json, currentState: Option[Json], path:Path): Seq[(String, Path)] =
+      contract.validator.validate(Some(value), currentState, path)
+
+    def $sanitize(json:Json):Json = ???
+  }
+
+  implicit class BaseContractValidation(val contract:BaseContract) extends AnyVal {
+    def $validate(newContent:Json):JValid =
+      seqToJValid($validate(newContent, None, Path.empty), newContent)
+
+    def $validate(deltaContent:Json, currentState:Json):JValid =
+      seqToJValid($validate(deltaContent, Some(currentState), Path.empty), deltaContent)
+
+    def $validate(deltaContent:Json, currentState:Option[Json]):JValid =
+      seqToJValid($validate(deltaContent, currentState, Path.empty), deltaContent)
     //TODO better approach here
     def $validate(value: Json, currentState: Option[Json], path:Path): Seq[(String, Path)] =
       getProperties(contract).flatMap{p =>
@@ -47,4 +61,10 @@ object JsonValidation extends ValidationPropertyCache {
           Seq.empty
       }) ++ prop.validator.validate(value, currentState, path)
   }
+
+  private def seqToJValid(seq:Seq[(String, Path)], json:Json) =
+    seq match {
+      case Nil => Success(json)
+      case failure +: failures => Failure(NonEmptyList(failure, failures:_*))
+    }
 }

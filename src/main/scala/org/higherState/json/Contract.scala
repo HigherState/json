@@ -6,6 +6,9 @@ trait SelfApply {
 
 trait BaseContract extends SelfApply {
   implicit protected def absolutePath:Path
+
+  def $dynamic[T](path:String)(implicit pattern:Pattern[Option[T]]) =
+    new Maybe[T](path, absolutePath \ path, EmptyValidator)
 }
 
 abstract class Contract(implicit pattern:Pattern[JObject]) extends BaseContract {

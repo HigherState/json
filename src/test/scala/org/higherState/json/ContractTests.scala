@@ -64,12 +64,12 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     println(Document.$validate(document, JObject("Id" -> UUID.randomUUID().toString.j, "age" -> 223.j)))
 //    println(Document.schema)
 
-    println(document.$select(Document.age, Document.metadata.name))
-    println(document.$exclude(Document.id))
+    println(document.select(Document.age, Document.metadata.name))
+    println(document.exclude(Document.id))
 
-    println(document.$append("temp" -> 1.j))
+    println(document.append("temp" -> 1.j))
 
-    println(document.$concat(JObject("temp" -> 1.j)))
+    println(document.concat(JObject("temp" -> 1.j)))
     val t = Document.phone.$maybeSet(Some(12314))(document)
     println(t)
     println(Document.phone.$set(None)(t))
@@ -254,6 +254,25 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
     }
     val q = WithS.$elemMatch(e => e.$gt(4) && e.$lt(6))
     JsonSerializer.prettyPrint(q)
+  }
+
+  object WithM extends ValueContract[Map[String, Json]](values(WithSet))
+
+  test("Map validation") {
+    import JsonLens._
+    import JsonQuery._
+
+    val m = WithM.$create(Map("first" -> WithSet.$create(_.set.$set(Set("one", "two")))))
+    println(WithM.$validate(m))
+    val f = WithM.$create(Map("first" -> JObject("fail" -> JFalse)))
+    println(WithM.$validate(f))
+
+    println(WithM.$dynamic[Json]("value").$exists(true))
+    val matcher = WithM.$dynamic[Json]("first")
+    m match {
+      case matcher(Some(WithSet(set))) =>
+        println(set)
+    }
   }
 
 }

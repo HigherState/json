@@ -105,6 +105,7 @@ trait ValidationPropertyCache {
 trait JsonValidators {
   import DefaultPatterns._
   import JsonConstructor._
+  import JsonPath._
 
 
   val immutable = new SimpleValidator[Nothing] {
@@ -332,6 +333,19 @@ trait JsonValidators {
       } getOrElse Seq.empty
 
     def schema = JObject.empty //("items" -> contract.schema)
+  }
+
+  def values(contract:BaseContract) = new Validator[JOptionable[Map[String,Nothing]]] {
+    def validate(value: Option[Json], currentState: Option[Json], path: Path): Seq[(String, Path)] =
+      value collect {
+        case JObject(map) =>
+          map.flatMap{ kv =>
+            val current = currentState \ kv._1
+            JsonValidation.BaseContractValidation(contract).$validate(kv._2, current, path \ kv._1)
+          }.toSeq
+      } getOrElse Seq.empty[(String, Path)]
+
+    def schema: JObject = ???
   }
 }
 
