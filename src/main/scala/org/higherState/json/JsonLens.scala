@@ -22,8 +22,8 @@ object JsonLens {
 
   implicit class ContractTypeExt[T <: ContractType](val c:T) extends AnyVal {
     def $create(f:c.type => Json => Json):JObject =
-      f(c)(JObject(Map(c.key -> c.matcher.default))).asInstanceOf[JObject]
-    def $create() = JObject(Map(c.key -> c.matcher.default))
+      f(c)(JObject(Map(c.$key -> c.$matcher.default))).asInstanceOf[JObject]
+    def $create() = JObject(Map(c.$key -> c.$matcher.default))
   }
 
   implicit class ValueLens[T](val prop: Property[T]) extends AnyVal {
@@ -71,7 +71,7 @@ object JsonLens {
       }
   }
 
-  implicit class JsonLens[T](val json:Json) extends AnyVal {
+  implicit class JsonLens(val json:Json) extends AnyVal {
     def select(properties:Property[_]*):Json = {
       properties.foldLeft(JObject.empty.asInstanceOf[Json]) { (j, p) =>
         getValue(json, p.absolutePath.segments).fold(j){v =>

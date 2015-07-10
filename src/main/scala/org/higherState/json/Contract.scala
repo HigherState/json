@@ -18,10 +18,10 @@ abstract class Contract(implicit pattern:Pattern[JObject]) extends BaseContract 
     pattern.unapply(j)
 }
 
-abstract class ContractType(val key:String, val matcher:Matcher = DefaultMatcher)(implicit pattern:Pattern[JObject]) extends BaseContract {
+abstract class ContractType(val $key:String, val $matcher:Matcher = DefaultMatcher)(implicit pattern:Pattern[JObject]) extends BaseContract {
   implicit protected def absolutePath: Path = Path.empty
   def unapply(j:Json):Option[JObject] =
-    pattern.unapply(j).filter(_.value.get(key).exists(matcher.isMatch))
+    pattern.unapply(j).filter(_.value.get($key).exists($matcher.isMatch))
 }
 
 abstract class ValueContract[T](val validator: Validator[T] = EmptyValidator)(implicit _pattern:Pattern[T]) extends BaseContract with Property[T] {

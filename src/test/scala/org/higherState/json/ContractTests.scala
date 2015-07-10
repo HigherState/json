@@ -216,6 +216,7 @@ class ContractTests extends FunSuite with Matchers with ScalaFutures {
       "three" +: c
     }(c))
 
+    println(JObject("one" -> 1.j).asInstanceOf[Json].delta(JObject("two" -> 2.j)))
 //    println(Collection.coll{ c =>
 //      c.append("three") ~
 //        c.at(0).modify(_ + "_") ~
